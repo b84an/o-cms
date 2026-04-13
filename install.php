@@ -24,6 +24,19 @@ ini_set('display_errors', '0');
 
 // Già installato? Blocca l'accesso.
 if (file_exists(__DIR__ . '/data/.installed')) {
+    // Gestisci richiesta di auto-eliminazione
+    if (isset($_GET['self-delete']) && $_GET['self-delete'] === 'confirm') {
+        $siteUrl = '';
+        $configFile = __DIR__ . '/data/config.json';
+        if (file_exists($configFile)) {
+            $cfg = json_decode(file_get_contents($configFile), true);
+            $siteUrl = $cfg['site_url'] ?? '';
+        }
+        @unlink(__FILE__);
+        $redirect = $siteUrl ? $siteUrl . '/admin/' : '/admin/';
+        header('Location: ' . $redirect);
+        exit;
+    }
     die('O-CMS è già installato. Per sicurezza, elimina install.php dal server.');
 }
 
@@ -865,16 +878,44 @@ $stepLabels = [1 => 'Requisiti', 2 => 'Sito', 3 => 'Admin', 4 => 'Email', 5 => '
             </div>
             <?php endif; ?>
 
-            <div class="alert alert-warning" style="text-align:left;">
-                <strong>Importante — fallo subito:</strong><br>
-                1. <strong>Elimina <code>install.php</code></strong> dal server per sicurezza<br>
-                2. Il tuo login admin: <strong><?= e($data['admin_user'] ?? 'admin') ?></strong> con la password che hai scelto
+            <div class="alert alert-info" style="text-align:left;">
+                Il tuo login admin: <strong><?= e($data['admin_user'] ?? 'admin') ?></strong> con la password che hai scelto.
             </div>
 
-            <div style="display:flex;gap:12px;justify-content:center;margin-top:20px;">
+            <div style="display:flex;gap:12px;justify-content:center;margin-top:20px;flex-wrap:wrap;">
                 <a href="<?= e($data['site_url'] ?? '') ?>/" class="btn btn-secondary">Vai al sito</a>
-                <a href="<?= e($data['site_url'] ?? '') ?>/admin/" class="btn btn-primary">Pannello admin &rarr;</a>
+                <a href="<?= e($data['site_url'] ?? '') ?>/admin/" class="btn btn-secondary">Pannello admin</a>
+                <button onclick="deleteInstaller()" id="btnDelete" class="btn btn-primary">Elimina install.php e vai al pannello &rarr;</button>
             </div>
+            <p id="deleteStatus" style="color:var(--text-muted);font-size:0.8rem;margin-top:12px;display:none;"></p>
+
+            <script>
+            function deleteInstaller() {
+                if (!confirm('Eliminare install.php dal server? Questa azione è irreversibile.')) return;
+                const btn = document.getElementById('btnDelete');
+                const status = document.getElementById('deleteStatus');
+                btn.disabled = true;
+                btn.textContent = 'Eliminazione in corso...';
+                status.style.display = 'block';
+                status.textContent = '';
+                fetch('?self-delete=confirm')
+                    .then(r => {
+                        if (r.redirected || r.ok) {
+                            status.textContent = 'File eliminato! Reindirizzamento...';
+                            status.style.color = 'var(--success)';
+                            setTimeout(() => { window.location.href = '<?= e($data['site_url'] ?? '') ?>/admin/'; }, 1000);
+                        } else {
+                            throw new Error('Risposta inattesa');
+                        }
+                    })
+                    .catch(() => {
+                        status.textContent = 'Impossibile eliminare il file. Rimuovilo manualmente via FTP.';
+                        status.style.color = 'var(--error)';
+                        btn.disabled = false;
+                        btn.textContent = 'Riprova';
+                    });
+            }
+            </script>
         <?php else: ?>
             <div class="success-icon">&#9888;&#65039;</div>
             <h2 style="text-align:center;">Installazione fallita</h2>
