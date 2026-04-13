@@ -1,6 +1,6 @@
     <footer class="site-footer">
         <div class="container">
-            <p>&copy; <?= date('Y') ?> <?= ocms_escape($app->config['site_name'] ?? 'O-CMS') ?>. Powered by O-CMS.</p>
+            <p>&copy; <?= date('Y') ?> <?= ocms_escape($app->config['site_name'] ?? 'O-CMS') ?></p>
         </div>
     </footer>
     <script>

@@ -4253,6 +4253,8 @@ HTML;
         // Inject the CSS --site-width variable right after <head>
         $widthStyle = ocms_site_width_style();
         $html = preg_replace('/(<head[^>]*>)/i', '$1' . "\n    " . $widthStyle, $html, 1);
+        // Inject powered-by badge before </body>
+        $html = $this->injectPoweredBy($html);
         echo $html;
     }
 
@@ -4307,7 +4309,7 @@ HTML;
         $lang = $this->config['language'] ?? 'it';
         $siteWidthStyle = ocms_site_width_style();
 
-        echo <<<HTML
+        $layoutHtml = <<<HTML
 <!DOCTYPE html>
 <html lang="{$lang}">
 <head>
@@ -4325,6 +4327,7 @@ HTML;
 </body>
 </html>
 HTML;
+        echo $this->injectPoweredBy($layoutHtml);
     }
 
     /**
@@ -4676,7 +4679,7 @@ CSS;
          Personalizza il footer qui. Puoi aggiungere colonne, social, ecc. -->
     <footer class="site-footer">
         <div class="container">
-            <p>&copy; <?= date(\'Y\') ?> <?= ocms_escape($app->config[\'site_name\'] ?? \'O-CMS\') ?>. Powered by O-CMS.</p>
+            <p>&copy; <?= date(\'Y\') ?> <?= ocms_escape($app->config[\'site_name\'] ?? \'O-CMS\') ?></p>
         </div>
     </footer>
 </body>
@@ -4959,6 +4962,32 @@ MD;
         $userLevel = $hierarchy[$user['role']] ?? 0;
         $requiredLevel = $hierarchy[$role] ?? 0;
         return $userLevel >= $requiredLevel;
+    }
+
+    /**
+     * Inject the "Powered by O-CMS" badge before </body>.
+     *
+     * This badge is part of the O-CMS free license. It must remain visible
+     * on all pages rendered by the CMS. The badge is intentionally injected
+     * by the core engine so it cannot be removed by editing theme templates.
+     *
+     * @param string $html Full HTML output
+     * @return string HTML with the powered-by badge injected
+     */
+    private function injectPoweredBy(string $html): string {
+        $badge = '<div style="text-align:center;padding:12px 0 10px;font-size:0.7rem;'
+               . 'opacity:0.55;font-family:system-ui,sans-serif;" id="ocms-pb">'
+               . 'Powered by <a href="https://ivanbertotto.it/s/o-cms" target="_blank" '
+               . 'rel="noopener" style="color:inherit;text-decoration:underline;">O-CMS</a>'
+               . '</div>';
+
+        // Inject before </body>
+        $pos = strripos($html, '</body>');
+        if ($pos !== false) {
+            return substr_replace($html, $badge . "\n", $pos, 0);
+        }
+        // Fallback: append at the end
+        return $html . $badge;
     }
 
     /**
