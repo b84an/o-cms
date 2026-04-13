@@ -193,8 +193,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && install_csrf_verify()) {
     $errors[] = 'Invalid security token. Please try again.';
 }
 
-// Allow navigating back via GET
-if (isset($_GET['step'])) {
+// Allow navigating back via GET (only when not processing a POST)
+if ($_SERVER['REQUEST_METHOD'] !== 'POST' && isset($_GET['step'])) {
     $s = (int)$_GET['step'];
     if ($s >= 1 && $s <= 6) $step = $s;
 }
@@ -219,13 +219,15 @@ if ($step === 7) {
     ];
     foreach ($dirs as $d) {
         $path = $baseDir . '/' . $d;
-        if (!is_dir($path)) @mkdir($path, 0755, true);
+        if (!is_dir($path) && !@mkdir($path, 0755, true)) {
+            $installWarnings[] = "Failed to create directory: {$d}";
+        }
     }
 
     // Protect data directory
     $htaccess = $baseDir . '/data/.htaccess';
     if (!file_exists($htaccess)) {
-        file_put_contents($htaccess, "Deny from all\n");
+        file_put_contents($htaccess, "# Protect data directory\n<IfModule mod_authz_core.c>\n    Require all denied\n</IfModule>\n<IfModule !mod_authz_core.c>\n    Deny from all\n</IfModule>\n");
     }
 
     $now = date('c');
@@ -270,7 +272,9 @@ if ($step === 7) {
         'installation_notified' => false,
         'ocms_version'          => '1.0.0',
     ];
-    file_put_contents($baseDir . '/data/config.json', json_encode($config, $jsonFlags));
+    if (file_put_contents($baseDir . '/data/config.json', json_encode($config, $jsonFlags)) === false) {
+        $installWarnings[] = 'Failed to write config.json';
+    }
 
     // 2. Admin user
     $adminUser = $data['admin_user'] ?? 'admin';
@@ -287,7 +291,9 @@ if ($step === 7) {
         'created_at'   => $now,
         'last_login'   => null,
     ];
-    file_put_contents($baseDir . '/data/users/' . $adminUser . '.json', json_encode($user, $jsonFlags));
+    if (file_put_contents($baseDir . '/data/users/' . $adminUser . '.json', json_encode($user, $jsonFlags)) === false) {
+        $installWarnings[] = 'Failed to write admin user file';
+    }
 
     // 3. Home page
     $homePage = [
@@ -308,7 +314,9 @@ if ($step === 7) {
         'updated_at' => $now,
         'views'      => 0,
     ];
-    file_put_contents($baseDir . '/data/pages/home.json', json_encode($homePage, $jsonFlags));
+    if (file_put_contents($baseDir . '/data/pages/home.json', json_encode($homePage, $jsonFlags)) === false) {
+        $installWarnings[] = 'Failed to write home page';
+    }
 
     // 4. About page
     $aboutPage = [
@@ -328,7 +336,9 @@ if ($step === 7) {
         'updated_at' => $now,
         'views'      => 0,
     ];
-    file_put_contents($baseDir . '/data/pages/about.json', json_encode($aboutPage, $jsonFlags));
+    if (file_put_contents($baseDir . '/data/pages/about.json', json_encode($aboutPage, $jsonFlags)) === false) {
+        $installWarnings[] = 'Failed to write about page';
+    }
 
     // 5. Sample article
     $article = [
@@ -355,7 +365,9 @@ if ($step === 7) {
         'updated_at'  => $now,
         'views'       => 0,
     ];
-    file_put_contents($baseDir . '/data/articles/getting-started-with-ocms.json', json_encode($article, $jsonFlags));
+    if (file_put_contents($baseDir . '/data/articles/getting-started-with-ocms.json', json_encode($article, $jsonFlags)) === false) {
+        $installWarnings[] = 'Failed to write sample article';
+    }
 
     // 6. Default category
     $category = [
@@ -367,7 +379,9 @@ if ($step === 7) {
         'order'       => 0,
         'created_at'  => $now,
     ];
-    file_put_contents($baseDir . '/data/categories/general.json', json_encode($category, $jsonFlags));
+    if (file_put_contents($baseDir . '/data/categories/general.json', json_encode($category, $jsonFlags)) === false) {
+        $installWarnings[] = 'Failed to write default category';
+    }
 
     // 7. Default tag
     $tag = [
@@ -376,7 +390,9 @@ if ($step === 7) {
         'slug'       => 'getting-started',
         'created_at' => $now,
     ];
-    file_put_contents($baseDir . '/data/tags/getting-started.json', json_encode($tag, $jsonFlags));
+    if (file_put_contents($baseDir . '/data/tags/getting-started.json', json_encode($tag, $jsonFlags)) === false) {
+        $installWarnings[] = 'Failed to write default tag';
+    }
 
     // 8. Main menu
     $menu = [
@@ -388,12 +404,24 @@ if ($step === 7) {
             ['id' => bin2hex(random_bytes(8)), 'label' => 'About', 'url' => '/about', 'target' => '_self', 'published' => true, 'children' => []],
         ],
     ];
-    file_put_contents($baseDir . '/data/menus/main.json', json_encode($menu, $jsonFlags));
+    if (file_put_contents($baseDir . '/data/menus/main.json', json_encode($menu, $jsonFlags)) === false) {
+        $installWarnings[] = 'Failed to write main menu';
+    }
 
     // 9. Lock file
-    file_put_contents($baseDir . '/data/.installed', date('c'));
+    if (file_put_contents($baseDir . '/data/.installed', date('c')) === false) {
+        $installWarnings[] = 'Failed to write lock file';
+    }
 
-    $installSuccess = true;
+    // Only mark as success if no critical files failed
+    $criticalFiles = ['config.json', 'admin user file', 'lock file'];
+    $hasCriticalFailure = false;
+    foreach ($installWarnings as $w) {
+        foreach ($criticalFiles as $cf) {
+            if (stripos($w, $cf) !== false) { $hasCriticalFailure = true; break 2; }
+        }
+    }
+    $installSuccess = !$hasCriticalFailure;
 
     // Clean up session
     unset($_SESSION['_install_data'], $_SESSION['_install_csrf']);
@@ -842,6 +870,15 @@ $stepLabels = [1 => 'Requirements', 2 => 'Site', 3 => 'Admin', 4 => 'Email', 5 =
                 O-CMS has been installed successfully. Your site is ready to use.
             </p>
 
+            <?php if (!empty($installWarnings)): ?>
+            <div class="alert alert-warning" style="text-align:left;">
+                <strong>Some non-critical files could not be created:</strong><br>
+                <?php foreach ($installWarnings as $w): ?>
+                    &bull; <?= e($w) ?><br>
+                <?php endforeach; ?>
+            </div>
+            <?php endif; ?>
+
             <div class="alert alert-warning" style="text-align:left;">
                 <strong>Important — do this now:</strong><br>
                 1. <strong>Delete <code>install.php</code></strong> from your server for security<br>
@@ -862,7 +899,7 @@ $stepLabels = [1 => 'Requirements', 2 => 'Site', 3 => 'Admin', 4 => 'Email', 5 =
     <?php endif; ?>
 
     <p style="text-align:center;color:var(--text-muted);font-size:0.7rem;margin-top:20px;">
-        O-CMS v1.0.0 &mdash; A flat-file CMS by <a href="https://github.com/ivanbertotto/o-cms" style="color:var(--primary);text-decoration:none;">Ivan Bertotto</a>
+        O-CMS v1.0.0 &mdash; A flat-file CMS by <a href="https://github.com/b84an/o-cms" style="color:var(--primary);text-decoration:none;">Ivan Bertotto</a>
     </p>
 </div>
 </body>
