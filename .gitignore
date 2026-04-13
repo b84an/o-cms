@@ -1,0 +1,52 @@
+# ─── User Data (created by installer) ───
+data/config.json
+data/users/
+data/articles/
+data/pages/
+data/categories/
+data/tags/
+data/comments/
+data/menus/
+data/forms/
+data/galleries/
+data/analytics/
+data/quiz-results/
+data/quizzes/
+data/lessons/
+data/revisions/
+data/logs/
+data/media/
+data/snippets/
+data/translations/
+data/widgets/
+data/layouts/
+data/backups/
+data/cache/
+data/.installed
+
+# ─── Uploads ───
+uploads/*
+!uploads/.gitkeep
+
+# ─── Extensions (user-installed) ───
+extensions/*
+!extensions/.gitkeep
+
+# ─── Generated files ───
+sitemap.xml
+
+# ─── OS files ───
+.DS_Store
+Thumbs.db
+*.swp
+*~
+
+# ─── IDE ───
+.idea/
+.vscode/
+*.sublime-project
+*.sublime-workspace
+
+# ─── Environment ───
+.env
+.claude/

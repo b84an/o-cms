@@ -1,0 +1,14 @@
+RewriteEngine On
+
+# Proteggi la cartella data
+RewriteRule ^data/ - [F,L]
+
+# Non riscrivere file e cartelle esistenti — riscrittura per admin
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^admin/(.*)$ admin/index.php [QSA,L]
+
+# Non riscrivere file e cartelle esistenti — riscrittura per frontend
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^(.*)$ index.php [QSA,L]

@@ -1,0 +1,12 @@
+{
+    "name": "Flavor",
+    "version": "1.0.0",
+    "author": "O-CMS",
+    "description": "Tema di default — elegante, minimale, responsive",
+    "colors": {
+        "primary": "#6366f1",
+        "secondary": "#a78bfa",
+        "bg": "#0f172a",
+        "text": "#f1f5f9"
+    }
+}
