@@ -1,18 +1,18 @@
 <?php
 /**
- * O-CMS Installation Wizard
+ * O-CMS — Procedura guidata di installazione
  *
- * A multi-step wizard that guides you through the initial setup of O-CMS.
- * This file should be deleted after installation for security.
+ * Guida passo-passo alla configurazione iniziale di O-CMS.
+ * Questo file va eliminato dopo l'installazione per motivi di sicurezza.
  *
- * Steps:
- *   1. Server requirements check
- *   2. Site configuration (name, URL, language, timezone)
- *   3. Admin account creation
- *   4. SMTP / Email setup (optional)
- *   5. Phone home disclosure (transparent opt-in)
- *   6. Summary and confirmation
- *   7. Installation complete
+ * Passaggi:
+ *   1. Verifica requisiti server
+ *   2. Configurazione sito (nome, URL, fuso orario)
+ *   3. Creazione account amministratore
+ *   4. Configurazione email / SMTP (opzionale)
+ *   5. Notifica installazione (opt-in trasparente)
+ *   6. Riepilogo e conferma
+ *   7. Installazione completata
  *
  * @package O-CMS
  * @version 1.0.0
@@ -22,14 +22,14 @@ set_time_limit(120);
 error_reporting(E_ALL);
 ini_set('display_errors', '0');
 
-// Already installed? Block access.
+// Già installato? Blocca l'accesso.
 if (file_exists(__DIR__ . '/data/.installed')) {
-    die('O-CMS is already installed. For security, delete install.php from your server.');
+    die('O-CMS è già installato. Per sicurezza, elimina install.php dal server.');
 }
 
 session_start();
 
-// ─── CSRF PROTECTION ───
+// ─── PROTEZIONE CSRF ───
 
 function install_csrf_token(): string {
     if (empty($_SESSION['_install_csrf'])) {
@@ -47,7 +47,7 @@ function install_csrf_field(): string {
     return '<input type="hidden" name="_csrf" value="' . install_csrf_token() . '">';
 }
 
-// ─── HELPER FUNCTIONS ───
+// ─── FUNZIONI HELPER ───
 
 function convertToBytes(string $val): int {
     $val = trim($val);
@@ -65,26 +65,26 @@ function convertToBytes(string $val): int {
 function checkRequirements(): array {
     $checks = [];
 
-    // PHP version
+    // Versione PHP
     $phpOk = version_compare(PHP_VERSION, '8.0.0', '>=');
     $checks[] = ['name' => 'PHP >= 8.0', 'ok' => $phpOk, 'value' => PHP_VERSION, 'required' => true];
 
-    // Required extensions
+    // Estensioni obbligatorie
     foreach (['json', 'mbstring', 'session', 'fileinfo'] as $ext) {
         $loaded = extension_loaded($ext);
-        $checks[] = ['name' => "Extension: {$ext}", 'ok' => $loaded, 'value' => $loaded ? 'Installed' : 'Missing', 'required' => true];
+        $checks[] = ['name' => "Estensione: {$ext}", 'ok' => $loaded, 'value' => $loaded ? 'Installata' : 'Mancante', 'required' => true];
     }
 
-    // Optional extensions
+    // Estensioni opzionali
     $optDescriptions = [
-        'zip'  => 'Needed for backups and extension installation',
-        'intl' => 'Better internationalization support',
-        'gd'   => 'Image resizing and thumbnail generation',
-        'curl' => 'AI integration and external API calls',
+        'zip'  => 'Necessaria per backup e installazione estensioni',
+        'intl' => 'Supporto internazionalizzazione avanzato',
+        'gd'   => 'Ridimensionamento immagini e miniature',
+        'curl' => 'Integrazione AI e chiamate API esterne',
     ];
     foreach ($optDescriptions as $ext => $desc) {
         $loaded = extension_loaded($ext);
-        $checks[] = ['name' => "Extension: {$ext}", 'ok' => $loaded, 'value' => $loaded ? 'Installed' : "Missing — {$desc}", 'required' => false];
+        $checks[] = ['name' => "Estensione: {$ext}", 'ok' => $loaded, 'value' => $loaded ? 'Installata' : "Mancante — {$desc}", 'required' => false];
     }
 
     // mod_rewrite
@@ -92,24 +92,24 @@ function checkRequirements(): array {
     $checks[] = [
         'name' => 'Apache mod_rewrite',
         'ok' => $modRewrite !== false,
-        'value' => $modRewrite === true ? 'Enabled' : ($modRewrite === null ? 'Cannot verify (likely OK)' : 'Disabled'),
+        'value' => $modRewrite === true ? 'Attivo' : ($modRewrite === null ? 'Non verificabile (probabilmente OK)' : 'Disattivo'),
         'required' => false,
     ];
 
-    // Writable directory
+    // Directory scrivibile
     $writable = is_writable(__DIR__);
-    $checks[] = ['name' => 'Directory writable', 'ok' => $writable, 'value' => $writable ? 'Yes' : 'No — insufficient permissions', 'required' => true];
+    $checks[] = ['name' => 'Directory scrivibile', 'ok' => $writable, 'value' => $writable ? 'Sì' : 'No — permessi insufficienti', 'required' => true];
 
-    // Disk space
+    // Spazio disco
     $freeSpace = @disk_free_space(__DIR__) ?: 0;
     $hasSpace = $freeSpace > 20 * 1024 * 1024;
-    $checks[] = ['name' => 'Disk space >= 20 MB', 'ok' => $hasSpace, 'value' => round($freeSpace / (1024 * 1024)) . ' MB free', 'required' => true];
+    $checks[] = ['name' => 'Spazio disco >= 20 MB', 'ok' => $hasSpace, 'value' => round($freeSpace / (1024 * 1024)) . ' MB liberi', 'required' => true];
 
-    // Memory limit
+    // Limite memoria
     $memLimit = ini_get('memory_limit');
     $memBytes = convertToBytes($memLimit);
     $memOk = $memBytes >= 64 * 1024 * 1024 || $memBytes === -1;
-    $checks[] = ['name' => 'Memory limit >= 64 MB', 'ok' => $memOk, 'value' => $memLimit, 'required' => false];
+    $checks[] = ['name' => 'Limite memoria >= 64 MB', 'ok' => $memOk, 'value' => $memLimit, 'required' => false];
 
     return $checks;
 }
@@ -124,47 +124,47 @@ function e(string $s): string {
     return htmlspecialchars($s, ENT_QUOTES, 'UTF-8');
 }
 
-// ─── STEP MANAGEMENT ───
+// ─── GESTIONE PASSAGGI ───
 
 $step = (int)($_POST['_step'] ?? $_GET['step'] ?? 1);
 $errors = [];
 $data = $_SESSION['_install_data'] ?? [];
 
-// Process POST submissions
+// Elaborazione invio POST
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && install_csrf_verify()) {
     switch ($step) {
-        case 2: // Site config submitted
-            $data['site_name']   = trim($_POST['site_name'] ?? 'My Website');
+        case 2: // Configurazione sito inviata
+            $data['site_name']   = trim($_POST['site_name'] ?? 'Il mio sito');
             $data['site_url']    = rtrim(trim($_POST['site_url'] ?? ''), '/');
-            $data['language']    = $_POST['language'] ?? 'en';
-            $data['timezone']    = $_POST['timezone'] ?? 'UTC';
-            $data['date_format'] = $_POST['date_format'] ?? 'Y-m-d';
-            if (empty($data['site_name'])) $errors[] = 'Site name is required.';
+            $data['language']    = 'it';
+            $data['timezone']    = $_POST['timezone'] ?? 'Europe/Rome';
+            $data['date_format'] = $_POST['date_format'] ?? 'd/m/Y';
+            if (empty($data['site_name'])) $errors[] = 'Il nome del sito è obbligatorio.';
             if (empty($errors)) { $_SESSION['_install_data'] = $data; $step = 3; }
             break;
 
-        case 3: // Admin account submitted
+        case 3: // Account admin inviato
             $data['admin_user']    = trim($_POST['admin_user'] ?? '');
             $data['admin_email']   = trim($_POST['admin_email'] ?? '');
             $data['admin_pass']    = $_POST['admin_pass'] ?? '';
             $data['admin_pass2']   = $_POST['admin_pass2'] ?? '';
             $data['admin_display'] = trim($_POST['admin_display'] ?? '') ?: $data['admin_user'];
             if (empty($data['admin_user']) || !preg_match('/^[a-z0-9_-]{3,30}$/', $data['admin_user'])) {
-                $errors[] = 'Username must be 3-30 characters, lowercase letters, numbers, - and _ only.';
+                $errors[] = 'Lo username deve essere di 3-30 caratteri: solo lettere minuscole, numeri, - e _.';
             }
             if (empty($data['admin_email']) || !filter_var($data['admin_email'], FILTER_VALIDATE_EMAIL)) {
-                $errors[] = 'A valid email address is required.';
+                $errors[] = 'Inserisci un indirizzo email valido.';
             }
             if (strlen($data['admin_pass']) < 8) {
-                $errors[] = 'Password must be at least 8 characters.';
+                $errors[] = 'La password deve essere di almeno 8 caratteri.';
             }
             if ($data['admin_pass'] !== $data['admin_pass2']) {
-                $errors[] = 'Passwords do not match.';
+                $errors[] = 'Le password non coincidono.';
             }
             if (empty($errors)) { $_SESSION['_install_data'] = $data; $step = 4; }
             break;
 
-        case 4: // SMTP submitted
+        case 4: // SMTP inviato
             $data['smtp_method'] = $_POST['smtp_method'] ?? 'php_mail';
             if ($data['smtp_method'] === 'smtp') {
                 $data['smtp_host']       = trim($_POST['smtp_host'] ?? '');
@@ -179,27 +179,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && install_csrf_verify()) {
             $step = 5;
             break;
 
-        case 5: // Phone home submitted
+        case 5: // Phone home inviato
             $data['phone_home'] = !empty($_POST['phone_home']);
             $_SESSION['_install_data'] = $data;
             $step = 6;
             break;
 
-        case 6: // Summary confirmed → run installation
+        case 6: // Riepilogo confermato → avvia installazione
             $step = 7;
             break;
     }
 } elseif ($_SERVER['REQUEST_METHOD'] === 'POST' && !install_csrf_verify()) {
-    $errors[] = 'Invalid security token. Please try again.';
+    $errors[] = 'Token di sicurezza non valido. Riprova.';
 }
 
-// Allow navigating back via GET (only when not processing a POST)
+// Permetti navigazione indietro via GET (solo quando non si elabora un POST)
 if ($_SERVER['REQUEST_METHOD'] !== 'POST' && isset($_GET['step'])) {
     $s = (int)$_GET['step'];
     if ($s >= 1 && $s <= 6) $step = $s;
 }
 
-// ─── INSTALLATION LOGIC (Step 7) ───
+// ─── LOGICA DI INSTALLAZIONE (Passaggio 7) ───
 
 $installSuccess = false;
 $installWarnings = [];
@@ -207,7 +207,7 @@ $installWarnings = [];
 if ($step === 7) {
     $baseDir = __DIR__;
 
-    // Create all data directories
+    // Crea tutte le directory dati
     $dirs = [
         'data', 'data/articles', 'data/analytics', 'data/backups', 'data/cache',
         'data/categories', 'data/comments', 'data/forms', 'data/galleries',
@@ -220,28 +220,28 @@ if ($step === 7) {
     foreach ($dirs as $d) {
         $path = $baseDir . '/' . $d;
         if (!is_dir($path) && !@mkdir($path, 0755, true)) {
-            $installWarnings[] = "Failed to create directory: {$d}";
+            $installWarnings[] = "Impossibile creare la directory: {$d}";
         }
     }
 
-    // Protect data directory
+    // Proteggi la directory dati
     $htaccess = $baseDir . '/data/.htaccess';
     if (!file_exists($htaccess)) {
-        file_put_contents($htaccess, "# Protect data directory\n<IfModule mod_authz_core.c>\n    Require all denied\n</IfModule>\n<IfModule !mod_authz_core.c>\n    Deny from all\n</IfModule>\n");
+        file_put_contents($htaccess, "# Proteggi directory dati\n<IfModule mod_authz_core.c>\n    Require all denied\n</IfModule>\n<IfModule !mod_authz_core.c>\n    Deny from all\n</IfModule>\n");
     }
 
     $now = date('c');
     $jsonFlags = JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES;
 
-    // 1. Config
+    // 1. Configurazione
     $config = [
-        'site_name'            => $data['site_name'] ?? 'My Website',
+        'site_name'            => $data['site_name'] ?? 'Il mio sito',
         'site_description'     => '',
         'site_url'             => $data['site_url'] ?? '',
         'theme'                => 'flavor',
-        'language'             => $data['language'] ?? 'en',
-        'timezone'             => $data['timezone'] ?? 'UTC',
-        'date_format'          => $data['date_format'] ?? 'Y-m-d',
+        'language'             => $data['language'] ?? 'it',
+        'timezone'             => $data['timezone'] ?? 'Europe/Rome',
+        'date_format'          => $data['date_format'] ?? 'd/m/Y',
         'posts_per_page'       => 10,
         'admin_email'          => $data['admin_email'] ?? '',
         'maintenance_mode'     => false,
@@ -273,17 +273,17 @@ if ($step === 7) {
         'ocms_version'          => '1.0.0',
     ];
     if (file_put_contents($baseDir . '/data/config.json', json_encode($config, $jsonFlags)) === false) {
-        $installWarnings[] = 'Failed to write config.json';
+        $installWarnings[] = 'Impossibile scrivere config.json';
     }
 
-    // 2. Admin user
+    // 2. Utente admin
     $adminUser = $data['admin_user'] ?? 'admin';
     $user = [
         'id'           => bin2hex(random_bytes(16)),
         'username'     => $adminUser,
         'email'        => $data['admin_email'] ?? '',
         'password'     => password_hash($data['admin_pass'] ?? 'changeme', PASSWORD_DEFAULT),
-        'display_name' => $data['admin_display'] ?? 'Administrator',
+        'display_name' => $data['admin_display'] ?? 'Amministratore',
         'role'         => 'super_administrator',
         'avatar'       => '',
         'active'       => true,
@@ -292,21 +292,21 @@ if ($step === 7) {
         'last_login'   => null,
     ];
     if (file_put_contents($baseDir . '/data/users/' . $adminUser . '.json', json_encode($user, $jsonFlags)) === false) {
-        $installWarnings[] = 'Failed to write admin user file';
+        $installWarnings[] = 'Impossibile scrivere il file utente admin';
     }
 
-    // 3. Home page
+    // 3. Pagina Home
     $homePage = [
         'id'         => bin2hex(random_bytes(16)),
-        'title'      => 'Welcome',
+        'title'      => 'Benvenuto',
         'slug'       => 'home',
-        'content'    => '<h2>Welcome to ' . e($data['site_name'] ?? 'O-CMS') . '</h2>'
-                      . '<p>Your new website is ready! Head over to the <a href="' . e($data['site_url'] ?? '') . '/admin/">admin panel</a> to start creating content.</p>'
-                      . '<p>O-CMS is a flat-file CMS — no database needed. Everything is stored in simple JSON files.</p>',
+        'content'    => '<h2>Benvenuto su ' . e($data['site_name'] ?? 'O-CMS') . '</h2>'
+                      . '<p>Il tuo nuovo sito è pronto! Vai al <a href="' . e($data['site_url'] ?? '') . '/admin/">pannello di amministrazione</a> per iniziare a creare contenuti.</p>'
+                      . '<p>O-CMS è un CMS flat-file: niente database, tutto è salvato in semplici file JSON.</p>',
         'template'   => 'home',
         'layout'     => 'none',
         'status'     => 'published',
-        'meta'       => ['title' => '', 'description' => 'Welcome to ' . ($data['site_name'] ?? 'O-CMS'), 'og_image' => ''],
+        'meta'       => ['title' => '', 'description' => 'Benvenuto su ' . ($data['site_name'] ?? 'O-CMS'), 'og_image' => ''],
         'order'      => 0,
         'parent'     => null,
         'author'     => $adminUser,
@@ -315,20 +315,20 @@ if ($step === 7) {
         'views'      => 0,
     ];
     if (file_put_contents($baseDir . '/data/pages/home.json', json_encode($homePage, $jsonFlags)) === false) {
-        $installWarnings[] = 'Failed to write home page';
+        $installWarnings[] = 'Impossibile scrivere la pagina home';
     }
 
-    // 4. About page
+    // 4. Pagina Chi siamo
     $aboutPage = [
         'id'         => bin2hex(random_bytes(16)),
-        'title'      => 'About',
-        'slug'       => 'about',
-        'content'    => '<p>This website is powered by <strong>O-CMS</strong>, a lightweight flat-file content management system.</p>'
-                      . '<p>Edit this page from the admin panel to tell visitors about yourself or your project.</p>',
+        'title'      => 'Chi siamo',
+        'slug'       => 'chi-siamo',
+        'content'    => '<p>Questo sito è realizzato con <strong>O-CMS</strong>, un sistema di gestione contenuti leggero basato su file.</p>'
+                      . '<p>Modifica questa pagina dal pannello admin per raccontare ai visitatori chi sei o di cosa tratta il tuo progetto.</p>',
         'template'   => 'page',
         'layout'     => 'none',
         'status'     => 'published',
-        'meta'       => ['title' => 'About', 'description' => 'About this website', 'og_image' => ''],
+        'meta'       => ['title' => 'Chi siamo', 'description' => 'Informazioni su questo sito', 'og_image' => ''],
         'order'      => 1,
         'parent'     => null,
         'author'     => $adminUser,
@@ -336,85 +336,85 @@ if ($step === 7) {
         'updated_at' => $now,
         'views'      => 0,
     ];
-    if (file_put_contents($baseDir . '/data/pages/about.json', json_encode($aboutPage, $jsonFlags)) === false) {
-        $installWarnings[] = 'Failed to write about page';
+    if (file_put_contents($baseDir . '/data/pages/chi-siamo.json', json_encode($aboutPage, $jsonFlags)) === false) {
+        $installWarnings[] = 'Impossibile scrivere la pagina Chi siamo';
     }
 
-    // 5. Sample article
+    // 5. Articolo di esempio
     $article = [
         'id'          => bin2hex(random_bytes(16)),
-        'title'       => 'Getting Started with O-CMS',
-        'slug'        => 'getting-started-with-ocms',
-        'excerpt'     => 'A quick guide to setting up your new O-CMS website.',
-        'content'     => '<p>Welcome to O-CMS! Here are a few things to get you started.</p>'
-                       . '<h3>Customize Your Settings</h3>'
-                       . '<p>Head to <strong>Settings</strong> in the admin panel to configure your site name, description, theme, and more.</p>'
-                       . '<h3>Create Content</h3>'
-                       . '<p>Use <strong>Pages</strong> for static content (like an About page) and <strong>Articles</strong> for your blog posts.</p>'
-                       . '<h3>Manage Your Menu</h3>'
-                       . '<p>The <strong>Menu Builder</strong> lets you organize your navigation with drag-and-drop simplicity.</p>'
-                       . '<h3>Choose a Theme</h3>'
-                       . '<p>O-CMS ships with the Flavor theme. You can create your own using the built-in Theme Wizard, or install one from a ZIP file.</p>',
+        'title'       => 'Primi passi con O-CMS',
+        'slug'        => 'primi-passi-con-ocms',
+        'excerpt'     => 'Una guida rapida per configurare il tuo nuovo sito O-CMS.',
+        'content'     => '<p>Benvenuto su O-CMS! Ecco qualche indicazione per iniziare.</p>'
+                       . '<h3>Personalizza le impostazioni</h3>'
+                       . '<p>Vai su <strong>Impostazioni</strong> nel pannello admin per configurare nome del sito, descrizione, tema e altro.</p>'
+                       . '<h3>Crea contenuti</h3>'
+                       . '<p>Usa le <strong>Pagine</strong> per i contenuti statici (come una pagina Chi siamo) e gli <strong>Articoli</strong> per il blog.</p>'
+                       . '<h3>Gestisci il menu</h3>'
+                       . '<p>Il <strong>Menu Builder</strong> ti permette di organizzare la navigazione con il drag-and-drop.</p>'
+                       . '<h3>Scegli un tema</h3>'
+                       . '<p>O-CMS include il tema Flavor. Puoi crearne uno tuo con il Theme Wizard integrato oppure installarne uno da file ZIP.</p>',
         'cover_image' => '',
-        'category'    => 'general',
-        'tags'        => ['getting-started'],
+        'category'    => 'generale',
+        'tags'        => ['primi-passi'],
         'status'      => 'published',
-        'meta'        => ['title' => 'Getting Started with O-CMS', 'description' => 'A quick guide to setting up your new O-CMS website.', 'og_image' => ''],
+        'meta'        => ['title' => 'Primi passi con O-CMS', 'description' => 'Una guida rapida per configurare il tuo nuovo sito O-CMS.', 'og_image' => ''],
         'author'      => $adminUser,
         'created_at'  => $now,
         'updated_at'  => $now,
         'views'       => 0,
     ];
-    if (file_put_contents($baseDir . '/data/articles/getting-started-with-ocms.json', json_encode($article, $jsonFlags)) === false) {
-        $installWarnings[] = 'Failed to write sample article';
+    if (file_put_contents($baseDir . '/data/articles/primi-passi-con-ocms.json', json_encode($article, $jsonFlags)) === false) {
+        $installWarnings[] = 'Impossibile scrivere l\'articolo di esempio';
     }
 
-    // 6. Default category
+    // 6. Categoria predefinita
     $category = [
         'id'          => bin2hex(random_bytes(16)),
-        'name'        => 'General',
-        'slug'        => 'general',
-        'description' => 'General posts and updates',
+        'name'        => 'Generale',
+        'slug'        => 'generale',
+        'description' => 'Articoli e aggiornamenti generali',
         'parent'      => null,
         'order'       => 0,
         'created_at'  => $now,
     ];
-    if (file_put_contents($baseDir . '/data/categories/general.json', json_encode($category, $jsonFlags)) === false) {
-        $installWarnings[] = 'Failed to write default category';
+    if (file_put_contents($baseDir . '/data/categories/generale.json', json_encode($category, $jsonFlags)) === false) {
+        $installWarnings[] = 'Impossibile scrivere la categoria predefinita';
     }
 
-    // 7. Default tag
+    // 7. Tag predefinito
     $tag = [
         'id'         => bin2hex(random_bytes(16)),
-        'name'       => 'Getting Started',
-        'slug'       => 'getting-started',
+        'name'       => 'Primi passi',
+        'slug'       => 'primi-passi',
         'created_at' => $now,
     ];
-    if (file_put_contents($baseDir . '/data/tags/getting-started.json', json_encode($tag, $jsonFlags)) === false) {
-        $installWarnings[] = 'Failed to write default tag';
+    if (file_put_contents($baseDir . '/data/tags/primi-passi.json', json_encode($tag, $jsonFlags)) === false) {
+        $installWarnings[] = 'Impossibile scrivere il tag predefinito';
     }
 
-    // 8. Main menu
+    // 8. Menu principale
     $menu = [
         'name'  => 'main',
-        'label' => 'Main Menu',
+        'label' => 'Menu Principale',
         'items' => [
-            ['id' => bin2hex(random_bytes(8)), 'label' => 'Home',  'url' => '/',      'target' => '_self', 'published' => true, 'children' => []],
-            ['id' => bin2hex(random_bytes(8)), 'label' => 'Blog',  'url' => '/blog',  'target' => '_self', 'published' => true, 'children' => []],
-            ['id' => bin2hex(random_bytes(8)), 'label' => 'About', 'url' => '/about', 'target' => '_self', 'published' => true, 'children' => []],
+            ['id' => bin2hex(random_bytes(8)), 'label' => 'Home',      'url' => '/',          'target' => '_self', 'published' => true, 'children' => []],
+            ['id' => bin2hex(random_bytes(8)), 'label' => 'Blog',      'url' => '/blog',      'target' => '_self', 'published' => true, 'children' => []],
+            ['id' => bin2hex(random_bytes(8)), 'label' => 'Chi siamo', 'url' => '/chi-siamo', 'target' => '_self', 'published' => true, 'children' => []],
         ],
     ];
     if (file_put_contents($baseDir . '/data/menus/main.json', json_encode($menu, $jsonFlags)) === false) {
-        $installWarnings[] = 'Failed to write main menu';
+        $installWarnings[] = 'Impossibile scrivere il menu principale';
     }
 
-    // 9. Lock file
+    // 9. File di blocco
     if (file_put_contents($baseDir . '/data/.installed', date('c')) === false) {
-        $installWarnings[] = 'Failed to write lock file';
+        $installWarnings[] = 'Impossibile scrivere il file di blocco';
     }
 
-    // Only mark as success if no critical files failed
-    $criticalFiles = ['config.json', 'admin user file', 'lock file'];
+    // Segna come riuscito solo se nessun file critico ha fallito
+    $criticalFiles = ['config.json', 'utente admin', 'file di blocco'];
     $hasCriticalFailure = false;
     foreach ($installWarnings as $w) {
         foreach ($criticalFiles as $cf) {
@@ -423,23 +423,23 @@ if ($step === 7) {
     }
     $installSuccess = !$hasCriticalFailure;
 
-    // Clean up session
+    // Pulizia sessione
     unset($_SESSION['_install_data'], $_SESSION['_install_csrf']);
 }
 
-// Requirements (needed for step 1 display)
+// Requisiti (necessari per la visualizzazione del passaggio 1)
 $checks = checkRequirements();
 $allRequiredOk = !in_array(false, array_map(fn($c) => !$c['required'] || $c['ok'], $checks));
 
-// Step labels for the progress bar
-$stepLabels = [1 => 'Requirements', 2 => 'Site', 3 => 'Admin', 4 => 'Email', 5 => 'Privacy', 6 => 'Summary', 7 => 'Done'];
+// Etichette passaggi per la barra di avanzamento
+$stepLabels = [1 => 'Requisiti', 2 => 'Sito', 3 => 'Admin', 4 => 'Email', 5 => 'Privacy', 6 => 'Riepilogo', 7 => 'Fine'];
 ?>
 <!DOCTYPE html>
-<html lang="en">
+<html lang="it">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>O-CMS — Installation Wizard</title>
+    <title>O-CMS — Installazione</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <style>
         :root {
@@ -467,7 +467,7 @@ $stepLabels = [1 => 'Requirements', 2 => 'Site', 3 => 'Admin', 4 => 'Email', 5 =
 
         h2 { font-size: 1.15rem; font-weight: 700; margin-bottom: 16px; }
 
-        /* Steps bar */
+        /* Barra passaggi */
         .steps { display: flex; gap: 0; margin-bottom: 24px; }
         .step-item {
             flex: 1; text-align: center; padding: 8px 2px; font-size: 0.7rem; font-weight: 600;
@@ -479,14 +479,14 @@ $stepLabels = [1 => 'Requirements', 2 => 'Site', 3 => 'Admin', 4 => 'Email', 5 =
         .step-item.active::after { background: var(--primary); }
         .step-item.done::after { background: var(--success); }
 
-        /* Check list */
+        /* Lista controlli */
         .check-item { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 0.875rem; }
         .check-item:last-child { border-bottom: none; }
         .check-icon { width: 20px; text-align: center; font-size: 1rem; flex-shrink: 0; }
         .check-name { flex: 1; font-weight: 500; }
         .check-value { color: var(--text-muted); font-size: 0.8rem; text-align: right; }
 
-        /* Forms */
+        /* Form */
         .form-group { margin-bottom: 16px; }
         .form-group label { display: block; font-size: 0.8rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
         .form-input, .form-select {
@@ -498,7 +498,7 @@ $stepLabels = [1 => 'Requirements', 2 => 'Site', 3 => 'Admin', 4 => 'Email', 5 =
         .form-hint { font-size: 0.75rem; color: var(--text-muted); margin-top: 4px; }
         .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 
-        /* Buttons */
+        /* Pulsanti */
         .btn { display: inline-block; padding: 12px 24px; border-radius: 8px; font-size: 0.9rem; font-weight: 600; cursor: pointer; border: none; font-family: inherit; transition: all 0.15s; text-decoration: none; }
         .btn-primary { background: linear-gradient(135deg, var(--primary), var(--primary-dark)); color: white; }
         .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(99,102,241,0.3); }
@@ -506,14 +506,14 @@ $stepLabels = [1 => 'Requirements', 2 => 'Site', 3 => 'Admin', 4 => 'Email', 5 =
         .btn-secondary { background: var(--bg); color: var(--text); border: 1px solid var(--border); }
         .btn-row { display: flex; gap: 12px; justify-content: space-between; }
 
-        /* Alerts */
+        /* Avvisi */
         .alert { padding: 12px 16px; border-radius: 8px; margin-bottom: 16px; font-size: 0.85rem; line-height: 1.5; }
         .alert-error { background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.3); color: #fca5a5; }
         .alert-warning { background: rgba(245,158,11,0.1); border: 1px solid rgba(245,158,11,0.3); color: #fcd34d; }
         .alert-success { background: rgba(34,197,94,0.1); border: 1px solid rgba(34,197,94,0.3); color: #86efac; }
         .alert-info { background: rgba(99,102,241,0.1); border: 1px solid rgba(99,102,241,0.3); color: #a5b4fc; }
 
-        /* Summary table */
+        /* Tabella riepilogo */
         .summary-table { width: 100%; font-size: 0.875rem; }
         .summary-table td { padding: 8px 0; border-bottom: 1px solid var(--border); vertical-align: top; }
         .summary-table td:first-child { font-weight: 600; width: 40%; color: var(--text-muted); }
@@ -540,10 +540,10 @@ $stepLabels = [1 => 'Requirements', 2 => 'Site', 3 => 'Admin', 4 => 'Email', 5 =
 <div class="installer">
     <div class="logo">
         <h1>O-CMS</h1>
-        <p>Installation Wizard</p>
+        <p>Installazione guidata</p>
     </div>
 
-    <!-- Steps bar -->
+    <!-- Barra passaggi -->
     <div class="steps">
         <?php foreach ($stepLabels as $num => $label): ?>
         <div class="step-item <?= $num === $step ? 'active' : ($num < $step ? 'done' : '') ?>">
@@ -552,15 +552,15 @@ $stepLabels = [1 => 'Requirements', 2 => 'Site', 3 => 'Admin', 4 => 'Email', 5 =
         <?php endforeach; ?>
     </div>
 
-    <!-- Errors -->
+    <!-- Errori -->
     <?php foreach ($errors as $err): ?>
         <div class="alert alert-error"><?= e($err) ?></div>
     <?php endforeach; ?>
 
     <?php if ($step === 1): ?>
-    <!-- ═══ STEP 1: REQUIREMENTS ═══ -->
+    <!-- ═══ PASSAGGIO 1: REQUISITI ═══ -->
     <div class="card">
-        <h2>Server Requirements</h2>
+        <h2>Requisiti del server</h2>
         <div class="check-list">
             <?php foreach ($checks as $c): ?>
             <div class="check-item">
@@ -572,169 +572,156 @@ $stepLabels = [1 => 'Requirements', 2 => 'Site', 3 => 'Admin', 4 => 'Email', 5 =
         </div>
 
         <?php if ($allRequiredOk): ?>
-            <div class="alert alert-success">All required checks passed!</div>
-            <a href="?step=2" class="btn btn-primary" style="display:block;text-align:center;">Continue &rarr;</a>
+            <div class="alert alert-success">Tutti i requisiti obbligatori sono soddisfatti!</div>
+            <a href="?step=2" class="btn btn-primary" style="display:block;text-align:center;">Continua &rarr;</a>
         <?php else: ?>
-            <div class="alert alert-error">Some required checks failed. Fix them before continuing.</div>
-            <button class="btn btn-primary" disabled>Requirements not met</button>
+            <div class="alert alert-error">Alcuni requisiti obbligatori non sono soddisfatti. Risolvili prima di continuare.</div>
+            <button class="btn btn-primary" disabled>Requisiti non soddisfatti</button>
         <?php endif; ?>
     </div>
 
     <?php elseif ($step === 2): ?>
-    <!-- ═══ STEP 2: SITE CONFIGURATION ═══ -->
+    <!-- ═══ PASSAGGIO 2: CONFIGURAZIONE SITO ═══ -->
     <form method="POST">
         <?= install_csrf_field() ?>
         <input type="hidden" name="_step" value="2">
 
         <div class="card">
-            <h2>Site Configuration</h2>
+            <h2>Configurazione del sito</h2>
 
             <div class="form-group">
-                <label>Site Name *</label>
-                <input type="text" name="site_name" class="form-input" value="<?= e($data['site_name'] ?? 'My Website') ?>" required>
+                <label>Nome del sito *</label>
+                <input type="text" name="site_name" class="form-input" value="<?= e($data['site_name'] ?? 'Il mio sito') ?>" required>
             </div>
 
             <div class="form-group">
-                <label>Base URL Path *</label>
-                <input type="text" name="site_url" class="form-input" value="<?= e($data['site_url'] ?? detectBaseUrl()) ?>" placeholder="Leave empty if installed at domain root">
-                <div class="form-hint">The path from your domain root. Example: <code>/cms</code> or <code>/blog</code>. Leave empty if O-CMS is at the root.</div>
+                <label>Percorso URL base</label>
+                <input type="text" name="site_url" class="form-input" value="<?= e($data['site_url'] ?? detectBaseUrl()) ?>" placeholder="Lascia vuoto se installato nella root del dominio">
+                <div class="form-hint">Il percorso dalla root del dominio. Esempio: <code>/cms</code> o <code>/blog</code>. Lascia vuoto se O-CMS è nella root.</div>
             </div>
 
             <div class="form-row">
                 <div class="form-group">
-                    <label>Language</label>
-                    <select name="language" class="form-select form-input">
-                        <?php
-                        $langs = ['en' => 'English', 'it' => 'Italiano', 'es' => 'Espa&ntilde;ol', 'fr' => 'Fran&ccedil;ais', 'de' => 'Deutsch', 'pt' => 'Portugu&ecirc;s'];
-                        $sel = $data['language'] ?? 'en';
-                        foreach ($langs as $code => $name):
-                        ?>
-                        <option value="<?= $code ?>" <?= $sel === $code ? 'selected' : '' ?>><?= $name ?></option>
-                        <?php endforeach; ?>
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label>Timezone</label>
+                    <label>Fuso orario</label>
                     <select name="timezone" class="form-select form-input">
                         <?php
-                        $zones = ['UTC', 'Europe/London', 'Europe/Rome', 'Europe/Paris', 'Europe/Berlin', 'Europe/Madrid',
-                                  'America/New_York', 'America/Chicago', 'America/Denver', 'America/Los_Angeles',
+                        $zones = ['Europe/Rome', 'Europe/London', 'Europe/Paris', 'Europe/Berlin', 'Europe/Madrid',
+                                  'UTC', 'America/New_York', 'America/Chicago', 'America/Denver', 'America/Los_Angeles',
                                   'America/Sao_Paulo', 'Asia/Tokyo', 'Asia/Shanghai', 'Asia/Kolkata', 'Australia/Sydney'];
-                        $selTz = $data['timezone'] ?? 'UTC';
+                        $selTz = $data['timezone'] ?? 'Europe/Rome';
                         foreach ($zones as $tz):
                         ?>
                         <option value="<?= $tz ?>" <?= $selTz === $tz ? 'selected' : '' ?>><?= $tz ?></option>
                         <?php endforeach; ?>
                     </select>
                 </div>
-            </div>
-
-            <div class="form-group">
-                <label>Date Format</label>
-                <select name="date_format" class="form-select form-input">
-                    <?php
-                    $formats = ['Y-m-d' => 'YYYY-MM-DD (2026-04-13)', 'd/m/Y' => 'DD/MM/YYYY (13/04/2026)', 'm/d/Y' => 'MM/DD/YYYY (04/13/2026)', 'd.m.Y' => 'DD.MM.YYYY (13.04.2026)'];
-                    $selFmt = $data['date_format'] ?? 'Y-m-d';
-                    foreach ($formats as $fmt => $label):
-                    ?>
-                    <option value="<?= $fmt ?>" <?= $selFmt === $fmt ? 'selected' : '' ?>><?= $label ?></option>
-                    <?php endforeach; ?>
-                </select>
+                <div class="form-group">
+                    <label>Formato data</label>
+                    <select name="date_format" class="form-select form-input">
+                        <?php
+                        $formats = ['d/m/Y' => 'GG/MM/AAAA (13/04/2026)', 'Y-m-d' => 'AAAA-MM-GG (2026-04-13)', 'm/d/Y' => 'MM/GG/AAAA (04/13/2026)', 'd.m.Y' => 'GG.MM.AAAA (13.04.2026)'];
+                        $selFmt = $data['date_format'] ?? 'd/m/Y';
+                        foreach ($formats as $fmt => $label):
+                        ?>
+                        <option value="<?= $fmt ?>" <?= $selFmt === $fmt ? 'selected' : '' ?>><?= $label ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
             </div>
         </div>
 
         <div class="btn-row">
-            <a href="?step=1" class="btn btn-secondary">&larr; Back</a>
-            <button type="submit" class="btn btn-primary">Continue &rarr;</button>
+            <a href="?step=1" class="btn btn-secondary">&larr; Indietro</a>
+            <button type="submit" class="btn btn-primary">Continua &rarr;</button>
         </div>
     </form>
 
     <?php elseif ($step === 3): ?>
-    <!-- ═══ STEP 3: ADMIN ACCOUNT ═══ -->
+    <!-- ═══ PASSAGGIO 3: ACCOUNT ADMIN ═══ -->
     <form method="POST">
         <?= install_csrf_field() ?>
         <input type="hidden" name="_step" value="3">
 
         <div class="card">
-            <h2>Admin Account</h2>
+            <h2>Account amministratore</h2>
             <p style="color:var(--text-muted);font-size:0.85rem;margin-bottom:16px;">
-                Create the first administrator account for your site.
+                Crea il primo account amministratore del sito.
             </p>
 
             <div class="form-group">
                 <label>Username *</label>
                 <input type="text" name="admin_user" class="form-input" value="<?= e($data['admin_user'] ?? '') ?>" pattern="[a-z0-9_-]{3,30}" required placeholder="admin">
-                <div class="form-hint">Lowercase letters, numbers, hyphens, and underscores only (3-30 chars)</div>
+                <div class="form-hint">Solo lettere minuscole, numeri, trattini e underscore (3-30 caratteri)</div>
             </div>
 
             <div class="form-group">
                 <label>Email *</label>
-                <input type="email" name="admin_email" class="form-input" value="<?= e($data['admin_email'] ?? '') ?>" required placeholder="you@example.com">
+                <input type="email" name="admin_email" class="form-input" value="<?= e($data['admin_email'] ?? '') ?>" required placeholder="tu@esempio.com">
             </div>
 
             <div class="form-row">
                 <div class="form-group">
                     <label>Password *</label>
-                    <input type="password" name="admin_pass" class="form-input" required minlength="8" placeholder="Min. 8 characters">
+                    <input type="password" name="admin_pass" class="form-input" required minlength="8" placeholder="Minimo 8 caratteri">
                 </div>
                 <div class="form-group">
-                    <label>Confirm Password *</label>
-                    <input type="password" name="admin_pass2" class="form-input" required minlength="8" placeholder="Repeat password">
+                    <label>Conferma password *</label>
+                    <input type="password" name="admin_pass2" class="form-input" required minlength="8" placeholder="Ripeti la password">
                 </div>
             </div>
 
             <div class="form-group">
-                <label>Display Name</label>
-                <input type="text" name="admin_display" class="form-input" value="<?= e($data['admin_display'] ?? '') ?>" placeholder="Defaults to username">
+                <label>Nome visualizzato</label>
+                <input type="text" name="admin_display" class="form-input" value="<?= e($data['admin_display'] ?? '') ?>" placeholder="Se vuoto, usa lo username">
             </div>
         </div>
 
         <div class="btn-row">
-            <a href="?step=2" class="btn btn-secondary">&larr; Back</a>
-            <button type="submit" class="btn btn-primary">Continue &rarr;</button>
+            <a href="?step=2" class="btn btn-secondary">&larr; Indietro</a>
+            <button type="submit" class="btn btn-primary">Continua &rarr;</button>
         </div>
     </form>
 
     <?php elseif ($step === 4): ?>
-    <!-- ═══ STEP 4: EMAIL / SMTP ═══ -->
+    <!-- ═══ PASSAGGIO 4: EMAIL / SMTP ═══ -->
     <form method="POST">
         <?= install_csrf_field() ?>
         <input type="hidden" name="_step" value="4">
 
         <div class="card">
-            <h2>Email Configuration</h2>
+            <h2>Configurazione email</h2>
             <p style="color:var(--text-muted);font-size:0.85rem;margin-bottom:16px;">
-                Configure how O-CMS sends emails (contact forms, notifications, password resets).
-                You can change this later in Settings.
+                Configura come O-CMS invia le email (form di contatto, notifiche, reset password).
+                Puoi modificare queste impostazioni in seguito.
             </p>
 
             <div class="form-group">
-                <label>Email Method</label>
+                <label>Metodo di invio</label>
                 <select name="smtp_method" id="smtpMethod" class="form-select form-input" onchange="toggleSmtp()">
-                    <option value="php_mail" <?= ($data['smtp_method'] ?? 'php_mail') === 'php_mail' ? 'selected' : '' ?>>PHP mail() — Default</option>
-                    <option value="smtp" <?= ($data['smtp_method'] ?? '') === 'smtp' ? 'selected' : '' ?>>SMTP Server</option>
+                    <option value="php_mail" <?= ($data['smtp_method'] ?? 'php_mail') === 'php_mail' ? 'selected' : '' ?>>PHP mail() — Predefinito</option>
+                    <option value="smtp" <?= ($data['smtp_method'] ?? '') === 'smtp' ? 'selected' : '' ?>>Server SMTP</option>
                 </select>
-                <div class="form-hint">PHP mail() works on most shared hosting. Use SMTP for better deliverability.</div>
+                <div class="form-hint">PHP mail() funziona sulla maggior parte degli hosting condivisi. Usa SMTP per una consegna più affidabile.</div>
             </div>
 
             <div id="smtpFields" class="smtp-fields">
                 <div class="form-row">
                     <div class="form-group">
-                        <label>SMTP Host</label>
-                        <input type="text" name="smtp_host" class="form-input" value="<?= e($data['smtp_host'] ?? '') ?>" placeholder="mail.example.com">
+                        <label>Host SMTP</label>
+                        <input type="text" name="smtp_host" class="form-input" value="<?= e($data['smtp_host'] ?? '') ?>" placeholder="mail.esempio.com">
                     </div>
                     <div class="form-group">
-                        <label>SMTP Port</label>
+                        <label>Porta SMTP</label>
                         <input type="number" name="smtp_port" class="form-input" value="<?= e($data['smtp_port'] ?? '587') ?>" placeholder="587">
                     </div>
                 </div>
 
                 <div class="form-group">
-                    <label>Encryption</label>
+                    <label>Crittografia</label>
                     <select name="smtp_encryption" class="form-select form-input">
-                        <option value="tls" <?= ($data['smtp_encryption'] ?? 'tls') === 'tls' ? 'selected' : '' ?>>TLS (recommended)</option>
+                        <option value="tls" <?= ($data['smtp_encryption'] ?? 'tls') === 'tls' ? 'selected' : '' ?>>TLS (consigliato)</option>
                         <option value="ssl" <?= ($data['smtp_encryption'] ?? '') === 'ssl' ? 'selected' : '' ?>>SSL</option>
-                        <option value="none" <?= ($data['smtp_encryption'] ?? '') === 'none' ? 'selected' : '' ?>>None</option>
+                        <option value="none" <?= ($data['smtp_encryption'] ?? '') === 'none' ? 'selected' : '' ?>>Nessuna</option>
                     </select>
                 </div>
 
@@ -751,20 +738,20 @@ $stepLabels = [1 => 'Requirements', 2 => 'Site', 3 => 'Admin', 4 => 'Email', 5 =
 
                 <div class="form-row">
                     <div class="form-group">
-                        <label>From Email</label>
-                        <input type="email" name="smtp_from_email" class="form-input" value="<?= e($data['smtp_from_email'] ?? '') ?>" placeholder="noreply@example.com">
+                        <label>Email mittente</label>
+                        <input type="email" name="smtp_from_email" class="form-input" value="<?= e($data['smtp_from_email'] ?? '') ?>" placeholder="noreply@esempio.com">
                     </div>
                     <div class="form-group">
-                        <label>From Name</label>
-                        <input type="text" name="smtp_from_name" class="form-input" value="<?= e($data['smtp_from_name'] ?? '') ?>" placeholder="My Website">
+                        <label>Nome mittente</label>
+                        <input type="text" name="smtp_from_name" class="form-input" value="<?= e($data['smtp_from_name'] ?? '') ?>" placeholder="Il mio sito">
                     </div>
                 </div>
             </div>
         </div>
 
         <div class="btn-row">
-            <a href="?step=3" class="btn btn-secondary">&larr; Back</a>
-            <button type="submit" class="btn btn-primary">Continue &rarr;</button>
+            <a href="?step=3" class="btn btn-secondary">&larr; Indietro</a>
+            <button type="submit" class="btn btn-primary">Continua &rarr;</button>
         </div>
     </form>
 
@@ -778,101 +765,100 @@ $stepLabels = [1 => 'Requirements', 2 => 'Site', 3 => 'Admin', 4 => 'Email', 5 =
     </script>
 
     <?php elseif ($step === 5): ?>
-    <!-- ═══ STEP 5: PHONE HOME DISCLOSURE ═══ -->
+    <!-- ═══ PASSAGGIO 5: NOTIFICA INSTALLAZIONE ═══ -->
     <form method="POST">
         <?= install_csrf_field() ?>
         <input type="hidden" name="_step" value="5">
 
         <div class="card">
-            <h2>Installation Notification</h2>
+            <h2>Notifica di installazione</h2>
 
             <div class="alert alert-info">
-                <strong>Transparency notice</strong>
+                <strong>Avviso di trasparenza</strong>
             </div>
 
             <p style="color:var(--text-muted);font-size:0.9rem;line-height:1.7;margin-bottom:16px;">
-                O-CMS includes an optional feature that sends a <strong>one-time anonymous notification</strong>
-                to the project maintainer when a new instance is installed. This helps track adoption and
-                prioritize development efforts.
+                O-CMS include una funzionalità opzionale che invia una <strong>notifica anonima una tantum</strong>
+                allo sviluppatore del progetto quando viene installata una nuova istanza. Questo aiuta a monitorare
+                l'adozione e a dare priorità allo sviluppo.
             </p>
 
             <div style="background:var(--bg);border-radius:8px;padding:16px;margin-bottom:16px;">
-                <p style="font-size:0.85rem;font-weight:600;margin-bottom:8px;">Data sent (one time only):</p>
+                <p style="font-size:0.85rem;font-weight:600;margin-bottom:8px;">Dati inviati (una sola volta):</p>
                 <ul style="font-size:0.85rem;color:var(--text-muted);padding-left:20px;line-height:1.8;">
-                    <li>Your domain name (e.g. <code>example.com</code>)</li>
-                    <li>PHP version (e.g. <code><?= PHP_VERSION ?></code>)</li>
-                    <li>O-CMS version (e.g. <code>1.0.0</code>)</li>
+                    <li>Il nome del tuo dominio (es. <code>esempio.com</code>)</li>
+                    <li>Versione PHP (es. <code><?= PHP_VERSION ?></code>)</li>
+                    <li>Versione O-CMS (es. <code>1.0.0</code>)</li>
                 </ul>
             </div>
 
             <p style="color:var(--text-muted);font-size:0.85rem;line-height:1.6;margin-bottom:20px;">
-                No personal information, no IP tracking, no cookies, no recurring calls.
-                You can disable this at any time in <strong>Settings</strong> by setting
-                <code>phone_home_allowed</code> to <code>false</code> in your config.
+                Nessun dato personale, nessun tracciamento IP, nessun cookie, nessuna chiamata ricorrente.
+                Puoi disattivare questa funzione in qualsiasi momento nelle <strong>Impostazioni</strong>
+                impostando <code>phone_home_allowed</code> su <code>false</code> nella configurazione.
             </p>
 
             <div class="checkbox-row">
                 <input type="checkbox" name="phone_home" id="phoneHome" value="1" checked>
                 <label for="phoneHome" style="font-size:0.9rem;cursor:pointer;">
-                    <strong>Allow one-time installation notification</strong><br>
-                    <span style="color:var(--text-muted);font-size:0.8rem;">Help the O-CMS project by letting the developer know you're using it.</span>
+                    <strong>Consenti la notifica di installazione</strong><br>
+                    <span style="color:var(--text-muted);font-size:0.8rem;">Aiuta il progetto O-CMS facendo sapere allo sviluppatore che lo stai usando.</span>
                 </label>
             </div>
         </div>
 
         <div class="btn-row">
-            <a href="?step=4" class="btn btn-secondary">&larr; Back</a>
-            <button type="submit" class="btn btn-primary">Continue &rarr;</button>
+            <a href="?step=4" class="btn btn-secondary">&larr; Indietro</a>
+            <button type="submit" class="btn btn-primary">Continua &rarr;</button>
         </div>
     </form>
 
     <?php elseif ($step === 6): ?>
-    <!-- ═══ STEP 6: SUMMARY ═══ -->
+    <!-- ═══ PASSAGGIO 6: RIEPILOGO ═══ -->
     <form method="POST">
         <?= install_csrf_field() ?>
         <input type="hidden" name="_step" value="6">
 
         <div class="card">
-            <h2>Installation Summary</h2>
+            <h2>Riepilogo installazione</h2>
             <p style="color:var(--text-muted);font-size:0.85rem;margin-bottom:16px;">
-                Review your settings before installing. Click a section title to go back and edit.
+                Controlla le impostazioni prima di installare. Clicca su un titolo di sezione per tornare indietro e modificarlo.
             </p>
 
             <table class="summary-table">
-                <tr><td><a href="?step=2" style="color:var(--primary);text-decoration:none;">Site Name</a></td><td><?= e($data['site_name'] ?? '') ?></td></tr>
-                <tr><td>Base URL</td><td><code><?= e($data['site_url'] ?? '/') ?: '/' ?></code></td></tr>
-                <tr><td>Language</td><td><?= e($data['language'] ?? 'en') ?></td></tr>
-                <tr><td>Timezone</td><td><?= e($data['timezone'] ?? 'UTC') ?></td></tr>
-                <tr><td>Date Format</td><td><code><?= e($data['date_format'] ?? 'Y-m-d') ?></code></td></tr>
+                <tr><td><a href="?step=2" style="color:var(--primary);text-decoration:none;">Nome sito</a></td><td><?= e($data['site_name'] ?? '') ?></td></tr>
+                <tr><td>URL base</td><td><code><?= e($data['site_url'] ?? '/') ?: '/' ?></code></td></tr>
+                <tr><td>Fuso orario</td><td><?= e($data['timezone'] ?? 'Europe/Rome') ?></td></tr>
+                <tr><td>Formato data</td><td><code><?= e($data['date_format'] ?? 'd/m/Y') ?></code></td></tr>
                 <tr><td colspan="2" style="height:8px;border:none;"></td></tr>
-                <tr><td><a href="?step=3" style="color:var(--primary);text-decoration:none;">Admin User</a></td><td><?= e($data['admin_user'] ?? '') ?></td></tr>
-                <tr><td>Admin Email</td><td><?= e($data['admin_email'] ?? '') ?></td></tr>
+                <tr><td><a href="?step=3" style="color:var(--primary);text-decoration:none;">Utente admin</a></td><td><?= e($data['admin_user'] ?? '') ?></td></tr>
+                <tr><td>Email admin</td><td><?= e($data['admin_email'] ?? '') ?></td></tr>
                 <tr><td colspan="2" style="height:8px;border:none;"></td></tr>
-                <tr><td><a href="?step=4" style="color:var(--primary);text-decoration:none;">Email Method</a></td><td><?= ($data['smtp_method'] ?? 'php_mail') === 'smtp' ? 'SMTP (' . e($data['smtp_host'] ?? '') . ')' : 'PHP mail()' ?></td></tr>
+                <tr><td><a href="?step=4" style="color:var(--primary);text-decoration:none;">Metodo email</a></td><td><?= ($data['smtp_method'] ?? 'php_mail') === 'smtp' ? 'SMTP (' . e($data['smtp_host'] ?? '') . ')' : 'PHP mail()' ?></td></tr>
                 <tr><td colspan="2" style="height:8px;border:none;"></td></tr>
-                <tr><td><a href="?step=5" style="color:var(--primary);text-decoration:none;">Phone Home</a></td><td><?= !empty($data['phone_home']) ? '&#9989; Enabled' : '&#10060; Disabled' ?></td></tr>
+                <tr><td><a href="?step=5" style="color:var(--primary);text-decoration:none;">Notifica</a></td><td><?= !empty($data['phone_home']) ? '&#9989; Attiva' : '&#10060; Disattiva' ?></td></tr>
             </table>
         </div>
 
         <div class="btn-row">
-            <a href="?step=5" class="btn btn-secondary">&larr; Back</a>
-            <button type="submit" class="btn btn-primary">Install O-CMS &rarr;</button>
+            <a href="?step=5" class="btn btn-secondary">&larr; Indietro</a>
+            <button type="submit" class="btn btn-primary">Installa O-CMS &rarr;</button>
         </div>
     </form>
 
     <?php elseif ($step === 7): ?>
-    <!-- ═══ STEP 7: COMPLETION ═══ -->
+    <!-- ═══ PASSAGGIO 7: COMPLETAMENTO ═══ -->
     <div class="card" style="text-align:center;">
         <?php if ($installSuccess): ?>
             <div class="success-icon">&#127881;</div>
-            <h2 style="text-align:center;">Installation Complete!</h2>
+            <h2 style="text-align:center;">Installazione completata!</h2>
             <p style="color:var(--text-muted);margin-bottom:24px;">
-                O-CMS has been installed successfully. Your site is ready to use.
+                O-CMS è stato installato con successo. Il tuo sito è pronto.
             </p>
 
             <?php if (!empty($installWarnings)): ?>
             <div class="alert alert-warning" style="text-align:left;">
-                <strong>Some non-critical files could not be created:</strong><br>
+                <strong>Alcuni file non critici non sono stati creati:</strong><br>
                 <?php foreach ($installWarnings as $w): ?>
                     &bull; <?= e($w) ?><br>
                 <?php endforeach; ?>
@@ -880,26 +866,26 @@ $stepLabels = [1 => 'Requirements', 2 => 'Site', 3 => 'Admin', 4 => 'Email', 5 =
             <?php endif; ?>
 
             <div class="alert alert-warning" style="text-align:left;">
-                <strong>Important — do this now:</strong><br>
-                1. <strong>Delete <code>install.php</code></strong> from your server for security<br>
-                2. Your admin login: <strong><?= e($data['admin_user'] ?? 'admin') ?></strong> with the password you chose
+                <strong>Importante — fallo subito:</strong><br>
+                1. <strong>Elimina <code>install.php</code></strong> dal server per sicurezza<br>
+                2. Il tuo login admin: <strong><?= e($data['admin_user'] ?? 'admin') ?></strong> con la password che hai scelto
             </div>
 
             <div style="display:flex;gap:12px;justify-content:center;margin-top:20px;">
-                <a href="<?= e($data['site_url'] ?? '') ?>/" class="btn btn-secondary">Visit Site</a>
-                <a href="<?= e($data['site_url'] ?? '') ?>/admin/" class="btn btn-primary">Go to Admin Panel &rarr;</a>
+                <a href="<?= e($data['site_url'] ?? '') ?>/" class="btn btn-secondary">Vai al sito</a>
+                <a href="<?= e($data['site_url'] ?? '') ?>/admin/" class="btn btn-primary">Pannello admin &rarr;</a>
             </div>
         <?php else: ?>
             <div class="success-icon">&#9888;&#65039;</div>
-            <h2 style="text-align:center;">Installation Failed</h2>
-            <p style="color:var(--text-muted);">Something went wrong. Check file permissions and try again.</p>
-            <a href="?step=1" class="btn btn-primary" style="margin-top:16px;">Start Over</a>
+            <h2 style="text-align:center;">Installazione fallita</h2>
+            <p style="color:var(--text-muted);">Qualcosa è andato storto. Controlla i permessi dei file e riprova.</p>
+            <a href="?step=1" class="btn btn-primary" style="margin-top:16px;">Ricomincia</a>
         <?php endif; ?>
     </div>
     <?php endif; ?>
 
     <p style="text-align:center;color:var(--text-muted);font-size:0.7rem;margin-top:20px;">
-        O-CMS v1.0.0 &mdash; A flat-file CMS by <a href="https://github.com/b84an/o-cms" style="color:var(--primary);text-decoration:none;">Ivan Bertotto</a>
+        O-CMS v1.0.0 &mdash; Un CMS flat-file di <a href="https://github.com/b84an/o-cms" style="color:var(--primary);text-decoration:none;">Ivan Bertotto</a>
     </p>
 </div>
 </body>
