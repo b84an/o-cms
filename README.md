@@ -1,10 +1,18 @@
-# O-CMS
+<p align="center">
+  <img src="logo.png" alt="O-CMS Logo" width="200">
+</p>
 
-A lightweight, elegant flat-file CMS built with PHP and JSON. No database required.
+<h1 align="center">O-CMS</h1>
 
-![PHP 8.0+](https://img.shields.io/badge/PHP-8.0%2B-777BB4?logo=php&logoColor=white)
-![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)
-![No Database](https://img.shields.io/badge/Database-None%20needed-blue)
+<p align="center">
+  A lightweight, elegant flat-file CMS built with PHP and JSON. No database required.
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/PHP-8.0%2B-777BB4?logo=php&logoColor=white" alt="PHP 8.0+">
+  <img src="https://img.shields.io/badge/License-MIT-green.svg" alt="License: MIT">
+  <img src="https://img.shields.io/badge/Database-None%20needed-blue" alt="No Database">
+</p>
 
 ---
 
