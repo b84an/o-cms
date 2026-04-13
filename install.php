@@ -10,7 +10,7 @@
  *   2. Configurazione sito (nome, URL, fuso orario)
  *   3. Creazione account amministratore
  *   4. Configurazione email / SMTP (opzionale)
- *   5. Notifica installazione (opt-in trasparente)
+ *   5. Notifica installazione (informativa)
  *   6. Riepilogo e conferma
  *   7. Installazione completata
  *
@@ -192,8 +192,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && install_csrf_verify()) {
             $step = 5;
             break;
 
-        case 5: // Phone home inviato
-            $data['phone_home'] = !empty($_POST['phone_home']);
+        case 5: // Phone home informativa
             $_SESSION['_install_data'] = $data;
             $step = 6;
             break;
@@ -281,7 +280,6 @@ if ($step === 7) {
             'model'        => '',
             'instructions' => '',
         ],
-        'phone_home_allowed'    => !empty($data['phone_home']),
         'installation_notified' => false,
         'ocms_version'          => '1.0.0',
     ];
@@ -791,8 +789,8 @@ $stepLabels = [1 => 'Requisiti', 2 => 'Sito', 3 => 'Admin', 4 => 'Email', 5 => '
             </div>
 
             <p style="color:var(--text-muted);font-size:0.9rem;line-height:1.7;margin-bottom:16px;">
-                O-CMS include una funzionalità opzionale che invia una <strong>notifica anonima una tantum</strong>
-                allo sviluppatore del progetto quando viene installata una nuova istanza. Questo aiuta a monitorare
+                O-CMS invia una <strong>notifica anonima una tantum</strong>
+                allo sviluppatore del progetto al primo accesso all'area admin. Questo aiuta a monitorare
                 l'adozione e a dare priorità allo sviluppo.
             </p>
 
@@ -807,17 +805,9 @@ $stepLabels = [1 => 'Requisiti', 2 => 'Sito', 3 => 'Admin', 4 => 'Email', 5 => '
 
             <p style="color:var(--text-muted);font-size:0.85rem;line-height:1.6;margin-bottom:20px;">
                 Nessun dato personale, nessun tracciamento IP, nessun cookie, nessuna chiamata ricorrente.
-                Puoi disattivare questa funzione in qualsiasi momento nelle <strong>Impostazioni</strong>
-                impostando <code>phone_home_allowed</code> su <code>false</code> nella configurazione.
+                L'unica informazione trasmessa è il nome del dominio su cui O-CMS viene installato.
+                Questa notifica supporta lo sviluppo del progetto e non può essere disattivata.
             </p>
-
-            <div class="checkbox-row">
-                <input type="checkbox" name="phone_home" id="phoneHome" value="1" checked>
-                <label for="phoneHome" style="font-size:0.9rem;cursor:pointer;">
-                    <strong>Consenti la notifica di installazione</strong><br>
-                    <span style="color:var(--text-muted);font-size:0.8rem;">Aiuta il progetto O-CMS facendo sapere allo sviluppatore che lo stai usando.</span>
-                </label>
-            </div>
         </div>
 
         <div class="btn-row">
@@ -849,7 +839,7 @@ $stepLabels = [1 => 'Requisiti', 2 => 'Sito', 3 => 'Admin', 4 => 'Email', 5 => '
                 <tr><td colspan="2" style="height:8px;border:none;"></td></tr>
                 <tr><td><a href="?step=4" style="color:var(--primary);text-decoration:none;">Metodo email</a></td><td><?= ($data['smtp_method'] ?? 'php_mail') === 'smtp' ? 'SMTP (' . e($data['smtp_host'] ?? '') . ')' : 'PHP mail()' ?></td></tr>
                 <tr><td colspan="2" style="height:8px;border:none;"></td></tr>
-                <tr><td><a href="?step=5" style="color:var(--primary);text-decoration:none;">Notifica</a></td><td><?= !empty($data['phone_home']) ? '&#9989; Attiva' : '&#10060; Disattiva' ?></td></tr>
+                <tr><td><a href="?step=5" style="color:var(--primary);text-decoration:none;">Notifica</a></td><td>&#9989; Attiva (solo nome dominio, una tantum)</td></tr>
             </table>
         </div>
 

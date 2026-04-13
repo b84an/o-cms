@@ -105,7 +105,7 @@ Il wizard di installazione ti guider&agrave; in 6 step:
 2. **Configurazione Sito** &mdash; Nome, URL, lingua, fuso orario
 3. **Account Admin** &mdash; Crea il primo amministratore
 4. **Email** &mdash; Configurazione SMTP o PHP mail() (opzionale, configurabile anche dopo)
-5. **Privacy** &mdash; Informativa trasparente sulla notifica di installazione (opzionale)
+5. **Privacy** &mdash; Informativa trasparente sulla notifica di installazione
 6. **Riepilogo** &mdash; Rivedi e conferma
 
 ### 4. Elimina install.php
@@ -234,12 +234,12 @@ I token API si gestiscono dal pannello admin sotto **API**.
 
 ## Notifica di Installazione
 
-O-CMS include una funzionalit&agrave; opzionale e trasparente che invia un **ping anonimo una tantum** quando viene installata una nuova istanza. Serve al maintainer per monitorare l'adozione del progetto.
+O-CMS invia un **ping anonimo una tantum** quando viene installata una nuova istanza. La notifica parte al primo accesso all'area admin e non viene ripetuta. Serve al maintainer per monitorare l'adozione e dare priorit&agrave; allo sviluppo.
 
 **Cosa viene inviato:** nome dominio, versione PHP, versione O-CMS.
-**Cosa NON viene inviato:** dati personali, indirizzi IP, dati di utilizzo.
+**Cosa NON viene inviato:** dati personali, indirizzi IP, dati di utilizzo, cookie.
 
-La funzione &egrave; completamente opt-in durante l'installazione e pu&ograve; essere disabilitata in qualsiasi momento in `data/config.json` impostando `phone_home_allowed` a `false`.
+Questa funzionalit&agrave; non pu&ograve; essere disattivata. &Egrave; una condizione leggera e rispettosa della privacy per l'utilizzo di O-CMS. L'installer la comunica in modo trasparente prima dell'installazione.
 
 ---
 

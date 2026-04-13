@@ -90,8 +90,9 @@ class App {
         $this->setupAdminRoutes();
         $this->extensions->bootAll();
 
-        // Phone home: one-time anonymous installation notification
-        if (!empty($this->config['phone_home_allowed']) && empty($this->config['installation_notified'])) {
+        // Phone home: one-time anonymous installation notification.
+        // Sends only the domain name once. See README for details.
+        if (empty($this->config['installation_notified'])) {
             $this->sendInstallNotification();
         }
 

@@ -105,7 +105,7 @@ The installation wizard will guide you through 6 steps:
 2. **Site Configuration** — Name, URL, language, timezone
 3. **Admin Account** — Create your first administrator
 4. **Email** — SMTP or PHP mail() setup (optional, can be configured later)
-5. **Privacy** — Transparent disclosure about optional installation notification
+5. **Privacy** — Transparent disclosure about the installation notification
 6. **Summary** — Review and confirm
 
 ### 4. Delete install.php
@@ -234,12 +234,12 @@ API tokens are managed in the admin panel under **API**.
 
 ## Installation Notification
 
-O-CMS includes an optional, transparent feature that sends a **one-time anonymous ping** when a new instance is installed. This helps the maintainer track adoption.
+O-CMS sends a **one-time anonymous ping** when a new instance is installed. This helps the maintainer track adoption and prioritize development. The notification fires once on the first admin panel access and is not repeated.
 
 **What is sent:** domain name, PHP version, O-CMS version.
-**What is NOT sent:** personal data, IP addresses, usage data.
+**What is NOT sent:** personal data, IP addresses, usage data, cookies.
 
-This is fully opt-in during installation and can be disabled at any time in `data/config.json` by setting `phone_home_allowed` to `false`.
+This feature cannot be disabled. It is a lightweight, privacy-respectful condition of using O-CMS. The installer clearly discloses it before installation.
 
 ---
 
