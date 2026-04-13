@@ -14,6 +14,10 @@
   <img src="https://img.shields.io/badge/Database-None%20needed-blue" alt="No Database">
 </p>
 
+<p align="center">
+  <strong>English</strong> · <a href="README.it.md">Italiano</a>
+</p>
+
 ---
 
 ## Why O-CMS?
@@ -78,10 +82,10 @@ The admin panel interface is currently in **Italian**. The installation wizard a
 ### 1. Download
 
 ```bash
-git clone https://github.com/ivanbertotto/o-cms.git
+git clone https://github.com/b84an/o-cms.git
 ```
 
-Or download the [latest release](https://github.com/ivanbertotto/o-cms/releases) as a ZIP.
+Or download the [latest release](https://github.com/b84an/o-cms/releases) as a ZIP.
 
 ### 2. Upload
 
