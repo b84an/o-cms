@@ -498,7 +498,10 @@ document.getElementById('btn-save').addEventListener('click', async () => {
 document.getElementById('btn-preview').addEventListener('click', async () => {
     const res = await fetch(BASE + '/admin/layouts/preview', {
         method: 'POST', headers: {'Content-Type':'application/json'},
-        body: JSON.stringify({ sections })
+        body: JSON.stringify({
+            _csrf_token: CSRF,
+            sections: sections
+        })
     });
     const html = await res.text();
     const frame = document.getElementById('preview-frame');
