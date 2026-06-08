@@ -125,7 +125,8 @@ class App {
             if ($page && !empty($page['layout']) && $page['layout'] !== 'none') {
                 $app->renderWithLayout($page);
             } else {
-                $app->render('home', ['page' => $page, 'featured' => $featured]);
+                $selectedTemplate = $page['template'];
+                $app->render($selectedTemplate, ['page' => $page, 'featured' => $featured]);
             }
         });
 
@@ -809,7 +810,8 @@ HTML;
             if (!empty($page['layout']) && $page['layout'] !== 'none') {
                 $app->renderWithLayout($page);
             } else {
-                $app->render('page', ['page' => $page]);
+                $selectedTemplate = $page['template'];
+                $app->render($selectedTemplate, ['page' => $page]);
             }
         });
     }
