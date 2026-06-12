@@ -91,6 +91,8 @@ class ExtensionManager {
 
         foreach (scandir($this->extensionsPath) as $dir) {
             if ($dir === '.' || $dir === '..') continue;
+			// FIX: Only process directories, not files like .gitkeep
+			if (!is_dir($this->extensionsPath . '/' . $dir)) continue;
             $manifest = $this->getManifest($dir);
             if ($manifest) {
                 $extensions[] = $manifest;

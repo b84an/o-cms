@@ -4,12 +4,10 @@
                 <?= ocms_escape($app->config['site_name'] ?? 'O-CMS') ?>
             </a>
             <div style="display:flex;align-items:center;gap:24px;">
-                <nav class="site-nav">
+               <nav class="site-nav">
                     <?php $menu = $app->storage->find('menus', 'main');
-                    if ($menu && !empty($menu['items'])):
-                        foreach (ocms_filter_menu_items($menu['items']) as $item): ?>
-                        <a href="<?= ocms_base_url() . ocms_escape($item['url']) ?>" class="nav-link"
-                           <?= ($item['target'] ?? '_self') === '_blank' ? 'target="_blank" rel="noopener"' : '' ?>>
+                    if ($menu): foreach ($menu['items'] as $item): ?>
+                        <a href="<?= preg_match('#^https?://#', $item['url']) ? ocms_escape($item['url']) : ocms_base_url() . ocms_escape($item['url']) ?>" class="nav-link"<?= ($item['target'] ?? '_self') === '_blank' ? ' target="_blank" rel="noopener"' : '' ?>>
                             <?= ocms_escape($item['label']) ?>
                         </a>
                     <?php endforeach; endif; ?>

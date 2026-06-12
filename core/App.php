@@ -4247,6 +4247,13 @@ HTML;
         }
 
         $app = $this;
+        
+        // Process shortcodes in page content if present
+        if (!empty($data['page']) && !empty($data['page']['content'])) {
+            $data['page']['content'] = ocms_render_gallery_shortcode($data['page']['content']);
+            $data['page']['content'] = ocms_render_form_shortcode($data['page']['content']);
+        }
+        
         extract($data, EXTR_SKIP);
         ob_start();
         include $file;
