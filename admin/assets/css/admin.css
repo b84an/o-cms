@@ -651,6 +651,20 @@ div.data-table > table { width: 100%; border-collapse: collapse; }
 .col-date { color: var(--ocms-text-muted); font-size: 0.85rem; white-space: nowrap; }
 .star-icon { vertical-align: -1px; margin-right: 4px; }
 
+/* Colonne ordinabili: l'intestazione è un pulsante, la freccia segue aria-sort */
+.col-num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+th.col-num .th-sort { flex-direction: row-reverse; }
+.th-sort {
+    all: unset; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;
+    font: inherit; color: inherit; border-radius: 4px;
+}
+.th-sort:hover { color: var(--ocms-text); }
+.th-sort:focus-visible { outline: 2px solid var(--ocms-focus); outline-offset: 3px; }
+.th-sort::after { content: '↕'; font-size: 0.9em; opacity: 0.35; }
+th[aria-sort="ascending"] .th-sort, th[aria-sort="descending"] .th-sort { color: var(--ocms-link); }
+th[aria-sort="ascending"] .th-sort::after { content: '↑'; opacity: 1; }
+th[aria-sort="descending"] .th-sort::after { content: '↓'; opacity: 1; }
+
 /* ═══ BADGE ═══ */
 .badge {
     display: inline-flex; align-items: center; gap: 5px;

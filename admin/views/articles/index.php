@@ -98,16 +98,25 @@ if ($filterCat === '__none__') {
                     <thead>
                         <tr>
                             <th class="col-check"><input type="checkbox" id="select-all" title="Seleziona tutti" aria-label="Seleziona tutti"></th>
-                            <th>Titolo</th>
-                            <th>Categoria</th>
-                            <th>Stato</th>
-                            <th>Data</th>
+                            <th data-sort-key="title" aria-sort="none"><button type="button" class="th-sort">Titolo</button></th>
+                            <th data-sort-key="category" aria-sort="none"><button type="button" class="th-sort">Categoria</button></th>
+                            <th data-sort-key="status" aria-sort="none"><button type="button" class="th-sort">Stato</button></th>
+                            <th data-sort-key="views" data-sort-type="num" aria-sort="none" class="col-num"><button type="button" class="th-sort">Visite</button></th>
+                            <th data-sort-key="date" data-sort-type="num" aria-sort="descending" class="col-date"><button type="button" class="th-sort">Data</button></th>
                             <th>Azioni</th>
                         </tr>
                     </thead>
                     <tbody>
-                        <?php foreach ($filteredArticles as $a): ?>
-                        <tr>
+                        <?php foreach ($filteredArticles as $a):
+                            $isScheduled = ($a['status'] ?? '') === 'published' && ocms_is_future($a['publish_at'] ?? null);
+                            $statusLabel = $isScheduled ? 'Programmato' : (($a['status'] ?? '') === 'published' ? 'Pubblicato' : 'Bozza');
+                            $dateTs = !empty($a['updated_at']) ? (int)strtotime($a['updated_at']) : 0;
+                        ?>
+                        <tr data-title="<?= ocms_escape(mb_strtolower(trim((string)($a['title'] ?? '')))) ?>"
+                            data-category="<?= ocms_escape(mb_strtolower((string)($catMap[$a['category'] ?? ''] ?? ($a['category'] ?? '')))) ?>"
+                            data-status="<?= ocms_escape($statusLabel) ?>"
+                            data-views="<?= (int)($a['views'] ?? 0) ?>"
+                            data-date="<?= $dateTs ?>">
                             <td><input type="checkbox" name="slugs[]" value="<?= ocms_escape($a['slug']) ?>" class="article-check" aria-label="Seleziona <?= ocms_escape($a['title']) ?>"></td>
                             <td>
                                 <a href="<?= ocms_base_url() ?>/admin/articles/edit/<?= ocms_escape($a['slug']) ?>" class="row-title">
@@ -135,17 +144,15 @@ if ($filterCat === '__none__') {
                                 </span>
                                 <?php endif; ?>
                             </td>
+                            <td class="col-num"><?= number_format((int)($a['views'] ?? 0), 0, ',', '.') ?></td>
                             <td class="col-date">
                                 <?= !empty($a['updated_at']) ? ocms_format_date($a['updated_at']) : '—' ?>
                             </td>
                             <td>
                                 <div class="row-actions">
                                     <a href="<?= ocms_base_url() ?>/admin/articles/edit/<?= ocms_escape($a['slug']) ?>" class="btn btn-secondary btn-sm">Modifica</a>
-                                    <form method="POST" action="<?= ocms_base_url() ?>/admin/articles/delete/<?= ocms_escape($a['slug']) ?>"
-                                          onsubmit="return confirm('Eliminare questo articolo?');">
-                                        <?= ocms_csrf_field() ?>
-                                        <button type="submit" class="btn btn-danger btn-sm">Elimina</button>
-                                    </form>
+                                    <?php // il form di eliminazione sta fuori dal form delle azioni di massa (i form annidati non funzionano) ?>
+                                    <button type="submit" form="del-<?= ocms_escape(md5($a['slug'])) ?>" class="btn btn-danger btn-sm">Elimina</button>
                                 </div>
                             </td>
                         </tr>
@@ -155,6 +162,12 @@ if ($filterCat === '__none__') {
             </div>
         </div>
     </form>
+    <?php foreach ($filteredArticles as $a): ?>
+    <form method="POST" id="del-<?= ocms_escape(md5($a['slug'])) ?>" action="<?= ocms_base_url() ?>/admin/articles/delete/<?= ocms_escape($a['slug']) ?>"
+          onsubmit="return confirm('Eliminare l\'articolo «<?= ocms_escape(addslashes((string)$a['title'])) ?>»?');" hidden>
+        <?= ocms_csrf_field() ?>
+    </form>
+    <?php endforeach; ?>
 <?php endif; ?>
 
 <script>
@@ -184,6 +197,44 @@ if ($filterCat === '__none__') {
         if (selectAll) selectAll.checked = state;
         updateBulk();
     };
+
+    // Ordinamento per colonna (lato browser, l'ordine scelto viene ricordato)
+    const table = document.querySelector('.data-table');
+    const tbody = table ? table.querySelector('tbody') : null;
+    const SORT_KEY = 'ocms-articles-sort';
+    function applySort(key, dir) {
+        if (!tbody) return;
+        const th = table.querySelector('th[data-sort-key="' + key + '"]');
+        if (!th) return;
+        const num = th.dataset.sortType === 'num';
+        const rows = Array.from(tbody.rows);
+        rows.sort(function(a, b) {
+            let va = a.dataset[key] || '', vb = b.dataset[key] || '';
+            let cmp = num ? (Number(va) - Number(vb)) : va.localeCompare(vb, 'it', {numeric: true, sensitivity: 'base'});
+            if (cmp === 0) cmp = Number(b.dataset.date) - Number(a.dataset.date);
+            return dir === 'asc' ? cmp : -cmp;
+        });
+        rows.forEach(r => tbody.appendChild(r));
+        table.querySelectorAll('th[data-sort-key]').forEach(h => h.setAttribute('aria-sort', 'none'));
+        th.setAttribute('aria-sort', dir === 'asc' ? 'ascending' : 'descending');
+        try { localStorage.setItem(SORT_KEY, JSON.stringify({key: key, dir: dir})); } catch (e) {}
+    }
+    if (table) {
+        table.querySelectorAll('th[data-sort-key] .th-sort').forEach(function(btn) {
+            btn.addEventListener('click', function() {
+                const th = btn.closest('th');
+                const cur = th.getAttribute('aria-sort');
+                // testo: prima A→Z; numeri e date: prima i più grandi/recenti
+                const first = th.dataset.sortType === 'num' ? 'desc' : 'asc';
+                const dir = cur === 'none' ? first : (cur === 'ascending' ? 'desc' : 'asc');
+                applySort(th.dataset.sortKey, dir);
+            });
+        });
+        try {
+            const saved = JSON.parse(localStorage.getItem(SORT_KEY) || 'null');
+            if (saved && saved.key) applySort(saved.key, saved.dir === 'asc' ? 'asc' : 'desc');
+        } catch (e) {}
+    }
 
     // Conferma spostamento
     document.getElementById('bulk-form')?.addEventListener('submit', function(e) {

@@ -2,6 +2,14 @@
 
 All notable changes to O-CMS will be documented in this file.
 
+## [2.0.4] - 2026-11-12
+
+### Novità
+- Elenco articoli nell'admin: colonna **Visite** e ordinamento cliccando sulle intestazioni (titolo, categoria, stato, visite, data); l'ordine scelto viene ricordato.
+
+### Correzioni
+- Elenco articoli: il pulsante "Elimina" di ogni riga stava in un form annidato dentro quello delle azioni di massa e il browser lo ignorava (cliccandolo partiva lo spostamento di categoria). Ora elimina davvero.
+
 ## [2.0.3] - 2026-11-12
 
 ### Correzioni
