@@ -148,6 +148,29 @@ t('/api/config senza chiavi IA né SMTP', $r['code'] === 200 && !str_contains($r
 $r = http('POST', "$base/api/articles", ['cookiejar' => $jarS, 'headers' => ['Content-Type: application/json'], 'body' => json_encode(['title' => 'csrf'])]);
 t('API in scrittura con la sola sessione richiede X-CSRF-Token', $r['code'] === 403);
 
+echo "== Verifica 2.0.5: percorsi, tipi, rinomine\n";
+@mkdir(dirname($data) . '/uploads/gallery', 0755, true);
+file_put_contents("$data/galleries/t-gal.json", json_encode(['id' => 'g', 'slug' => 't-gal', 'title' => 'G', 'status' => 'draft', 'images' => []]));
+$tokS = admin_token($base, $jarS);
+$r = http('POST', "$base/admin/galleries/save", ['cookiejar' => $jarS, 'body' => http_build_query(['_csrf_token' => $tokS, 'original_slug' => '../../data/users', 'slug' => 'leak', 'title' => 'x'])]);
+t('galleria: original_slug con ../ rifiutato (data/ non si sposta)', is_dir("$data/users") && !is_dir(dirname($data) . '/uploads/gallery/leak'));
+$r = http('POST', "$base/admin/galleries/delete/..", ['cookiejar' => $jarS, 'body' => http_build_query(['_csrf_token' => $tokS])]);
+t('galleria: slug ".." non cancella uploads/', is_dir(dirname($data) . '/uploads/gallery'), (string)$r['code']);
+$r = http('POST', "$base/api/articles", ['cookiejar' => $jarS, 'headers' => ['Content-Type: application/json', 'X-CSRF-Token: ' . $tokS], 'body' => json_encode(['title' => 'Tipi strani', 'slug' => 't-tipi', 'tags' => 'uno, due', 'meta' => 'x', 'gallery' => ['0" onfocus="alert(1)' => ['url' => '/a.jpg']], 'status' => 'published'])]);
+$a = @json_decode(@file_get_contents("$data/articles/t-tipi.json"), true);
+t('API: tags stringa normalizzati, meta e gallery ripuliti', ($a['tags'] ?? null) === ['uno', 'due'] && is_array($a['meta'] ?? null) && array_keys($a['gallery'] ?? [1 => 1]) === [0], $r['body']);
+t('il blog con quell\'articolo non va in errore', http('GET', "$base/blog/t-tipi")['code'] === 200);
+file_put_contents("$data/quizzes/t-qa.json", json_encode(['id' => 'qa', 'slug' => 't-qa', 'title' => 'A', 'status' => 'draft', 'questions' => [], 'settings' => []]));
+file_put_contents("$data/quizzes/t-qb.json", json_encode(['id' => 'qb', 'slug' => 't-qb', 'title' => 'B', 'status' => 'draft', 'questions' => [['text' => 'x', 'correct' => 'y', 'wrong' => ['z']]], 'settings' => []]));
+http('POST', "$base/admin/quizzes/save", ['cookiejar' => $jarS, 'body' => http_build_query(['_csrf_token' => $tokS, 'original_slug' => 't-qa', 'slug' => 't-qb', 'title' => 'A'])]);
+$qb = json_decode(file_get_contents("$data/quizzes/t-qb.json"), true);
+t('quiz: rinominare con lo slug di un altro non lo sovrascrive', count($qb['questions'] ?? []) === 1 && is_file("$data/quizzes/t-qb-2.json"));
+$r = http('POST', "$base/quiz/t-quiz/check-email", ['headers' => ['Content-Type: application/json'], 'body' => json_encode(['email' => 'x@example.test'])]);
+t('quiz: check-email senza token e codice rifiutato', $r['code'] === 403, (string)$r['code']);
+$h = http('GET', "$base/admin/login");
+t('cookie di sessione proprio dell\'installazione e limitato al suo percorso', (bool)preg_match('/Set-Cookie: ocms_[0-9a-f]{10}=[^;]+;.*path=\/s\//i', $h['headers']), trim(substr($h['headers'], 0, 0)));
+t('logout via GET non fa niente', http('GET', "$base/admin/logout", ['cookiejar' => $jarS])['code'] === 302 && http('GET', "$base/admin/articles", ['cookiejar' => $jarS])['code'] === 200);
+
 echo "== Form contatti\n";
 $r = http('POST', "$base/contatto/invia", ['headers' => ['Content-Type: application/json'], 'body' => json_encode(['nome' => 'x', 'email' => 'a@example.test', 'messaggio' => 'y'])]);
 t('form contatti senza Origin del sito rifiutato', $r['code'] === 403, $r['body']);

@@ -147,9 +147,9 @@ ob_start();
                 </h3>
 
                 <div id="gallery-grid" class="gallery-grid">
-                    <?php foreach ($gallery as $i => $img): ?>
+                    <?php foreach (array_values(array_filter((array)$gallery, 'is_array')) as $i => $img): $i = (int)$i; ?>
                     <div class="gallery-item" data-index="<?= $i ?>" style="position:relative;border-radius:8px;overflow:hidden;aspect-ratio:4/3;background:var(--bg);border:1px solid var(--border);">
-                        <img src="<?= ocms_base_url() . ocms_escape($img['thumb'] ?? $img['url']) ?>" alt="" style="width:100%;height:100%;object-fit:cover;">
+                        <img src="<?= ocms_base_url() . ocms_escape($img['thumb'] ?? $img['url'] ?? '') ?>" alt="" style="width:100%;height:100%;object-fit:cover;">
                         <button type="button" class="gallery-remove" onclick="removeGalleryImage(<?= $i ?>)"
                                 style="position:absolute;top:4px;right:4px;width:22px;height:22px;border-radius:50%;border:none;background:rgba(0,0,0,0.7);color:#fff;cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center;">&times;</button>
                     </div>
@@ -291,7 +291,7 @@ ob_start();
                     <label>Tag</label>
                     <input type="text" name="tags" class="form-input"
                            placeholder="tag1, tag2, tag3"
-                           value="<?= ocms_escape(implode(', ', $article['tags'] ?? [])) ?>">
+                           value="<?= ocms_escape(implode(', ', ocms_clean_tags($article['tags'] ?? []))) ?>">
                     <div class="form-hint">Separati da virgola, creati automaticamente</div>
                 </div>
             </div>

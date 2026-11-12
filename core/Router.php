@@ -89,7 +89,16 @@ class Router {
 
         if (preg_match($regex, $uri, $matches)) {
             // Filtra solo i parametri nominati
-            return array_filter($matches, 'is_string', ARRAY_FILTER_USE_KEY);
+            $params = array_filter($matches, 'is_string', ARRAY_FILTER_USE_KEY);
+            // Difesa centrale: un parametro "." o ".." (anche codificato) non è mai uno slug
+            // valido e, finito in un percorso, farebbe risalire di cartella
+            foreach ($params as $v) {
+                $d = rawurldecode((string)$v);
+                if ($d === '.' || $d === '..' || str_contains($d, "\0") || str_contains($d, '/') || str_contains($d, '\\')) {
+                    return false;
+                }
+            }
+            return $params;
         }
 
         return false;

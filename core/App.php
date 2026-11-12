@@ -189,12 +189,12 @@ class App {
             // Articoli correlati (stessa categoria o tag in comune, max 3)
             $related = [];
             $artCategory = $article['category'] ?? '';
-            $artTags = $article['tags'] ?? [];
+            $artTags = ocms_clean_tags($article['tags'] ?? []);
             foreach ($allArticles as $a) {
                 if ($a['slug'] === $article['slug']) continue;
                 if (count($related) >= 3) break;
                 $sameCat = $artCategory && ($a['category'] ?? '') === $artCategory;
-                $commonTags = array_intersect($artTags, $a['tags'] ?? []);
+                $commonTags = array_intersect($artTags, ocms_clean_tags($a['tags'] ?? []));
                 if ($sameCat || !empty($commonTags)) {
                     $related[] = $a;
                 }
@@ -235,10 +235,21 @@ class App {
                 return;
             }
 
-            $authorName = trim($_POST['author_name'] ?? '');
-            $authorEmail = trim($_POST['author_email'] ?? '');
-            $body = trim($_POST['comment_body'] ?? '');
-            $parentId = trim($_POST['parent_id'] ?? '');
+            $authorName = trim(ocms_post_str('author_name'));
+            $authorEmail = trim(ocms_post_str('author_email'));
+            $body = trim(ocms_post_str('comment_body'));
+            $parentId = trim(ocms_post_str('parent_id'));
+            if (mb_strlen($authorName) > 100 || mb_strlen($authorEmail) > 254 || mb_strlen($body) > 5000) {
+                ocms_flash_set('error', 'Testo troppo lungo: il commento può avere al massimo 5000 caratteri, il nome 100.');
+                ocms_redirect(ocms_base_url() . '/blog/' . $params['slug'] . '#comments');
+                return;
+            }
+            // limite per IP oltre a quello per sessione (cambiare sessione non basta più)
+            if (!ocms_rate_limit_ip('comment', 20, 3600)) {
+                ocms_flash_set('error', 'Troppi commenti da questa rete. Riprova più tardi.');
+                ocms_redirect(ocms_base_url() . '/blog/' . $params['slug'] . '#comments');
+                return;
+            }
 
             if (!$authorName || !$body) {
                 ocms_flash_set('error', 'Nome e commento sono obbligatori');
@@ -313,17 +324,23 @@ class App {
             // senza captcha in sessione, il controllo veniva saltato del tutto
             if ($captchaExpected === '' || !hash_equals($captchaExpected, $captchaInput)) {
                 ocms_flash_set('error', $captchaExpected === '' ? 'Sessione scaduta: ricarica la pagina e riprova.' : 'Risposta al captcha errata. Riprova.');
-                $referer = $_SERVER['HTTP_REFERER'] ?? ocms_base_url() . '/';
+                $referer = ocms_safe_referer();
                 ocms_redirect($referer);
                 return;
             }
             unset($_SESSION[$captchaKey]);
 
+            if (!ocms_rate_limit_ip('form_' . $params['slug'], 60, 3600)) {
+                ocms_flash_set('error', 'Troppi invii da questa rete. Riprova più tardi.');
+                ocms_redirect(ocms_base_url() . '/');
+                return;
+            }
+
             // Raccogli dati
             $submission = ['id' => ocms_uuid(), 'submitted_at' => ocms_now(), 'data' => []];
             foreach ($form['fields'] as $field) {
                 $key = $field['name'] ?? '';
-                $submission['data'][$key] = trim($_POST[$key] ?? '');
+                $submission['data'][$key] = mb_substr(trim(ocms_post_str($key)), 0, 5000);
             }
 
             $app->storage->update('forms', $params['slug'], function ($d) use ($submission) {
@@ -348,7 +365,7 @@ class App {
 
             $msg = $form['settings']['success_message'] ?? 'Grazie!';
             ocms_flash_set('success', $msg);
-            $referer = $_SERVER['HTTP_REFERER'] ?? ocms_base_url() . '/';
+            $referer = ocms_safe_referer();
             ocms_redirect($referer);
         });
 
@@ -474,12 +491,17 @@ class App {
                 return;
             }
 
-            $username = trim($_POST['username'] ?? '');
-            $email = trim($_POST['email'] ?? '');
-            $password = $_POST['password'] ?? '';
-            $displayName = trim($_POST['display_name'] ?? $username);
+            $username = trim(ocms_post_str('username'));
+            $email = trim(ocms_post_str('email'));
+            $password = ocms_post_str('password');
+            $displayName = mb_substr(trim(ocms_post_str('display_name', $username)), 0, 100);
 
             // Validazione
+            if (!ocms_rate_limit_ip('register', 10, 3600)) {
+                ocms_flash_set('error', 'Troppe registrazioni da questa rete. Riprova più tardi.');
+                ocms_redirect(ocms_base_url() . '/register');
+                return;
+            }
             if (!$username || !$email || !$password) {
                 ocms_flash_set('error', 'Tutti i campi sono obbligatori');
                 ocms_redirect(ocms_base_url() . '/register');
@@ -520,11 +542,14 @@ class App {
             $host = $_SERVER['HTTP_HOST'] ?? 'localhost';
             $activateUrl = $protocol . '://' . $host . $siteUrl . '/activate/' . $result['token'];
 
-            $siteName = $config['site_name'] ?? 'O-CMS';
+            $siteName = ocms_escape($config['site_name'] ?? 'O-CMS');
+            // il nome scelto da chi si registra va nell'email: niente HTML suo
+            $displayNameHtml = ocms_escape($displayName);
+            $activateUrl = ocms_escape($activateUrl);
             $htmlBody = <<<HTML
 <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:20px;">
     <h2 style="color:#6366f1;">Benvenuto su {$siteName}!</h2>
-    <p>Ciao <strong>{$displayName}</strong>,</p>
+    <p>Ciao <strong>{$displayNameHtml}</strong>,</p>
     <p>Grazie per esserti registrato. Clicca il pulsante qui sotto per attivare il tuo account:</p>
     <p style="text-align:center;margin:30px 0;">
         <a href="{$activateUrl}" style="background:#6366f1;color:white;padding:14px 28px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block;">Attiva Account</a>
@@ -651,7 +676,7 @@ HTML;
             $filterTag = $_GET['tag'] ?? '';
             $allTags = [];
             foreach ($galleries as $g) {
-                foreach ($g['tags'] ?? [] as $tag) {
+                foreach (ocms_clean_tags($g['tags'] ?? []) as $tag) {
                     $tagLower = mb_strtolower(trim($tag));
                     if (!in_array($tagLower, array_map('mb_strtolower', $allTags))) $allTags[] = trim($tag);
                 }
@@ -659,7 +684,7 @@ HTML;
             sort($allTags);
 
             if ($filterTag) {
-                $galleries = array_filter($galleries, fn($g) => in_array($filterTag, array_map('mb_strtolower', $g['tags'] ?? [])));
+                $galleries = array_filter($galleries, fn($g) => in_array($filterTag, array_map('mb_strtolower', ocms_clean_tags($g['tags'] ?? []))));
                 $galleries = array_values($galleries);
             }
 
@@ -776,8 +801,28 @@ HTML;
         $this->router->post('/quiz/{slug}/check-email', function ($params) use ($app) {
             header('Content-Type: application/json');
             $input = json_decode(file_get_contents('php://input'), true);
-            $email = strtolower(trim($input['email'] ?? ''));
+            $input = is_array($input) ? $input : [];
+            // Stessi cancelli dell'invio: quiz esistente, token, codice d'accesso.
+            // Prima chiunque poteva scoprire quali email avevano fatto un quiz.
+            $quiz = $app->storage->find('quizzes', $params['slug']);
+            if (!$quiz || ($quiz['status'] ?? '') !== 'published' || !ocms_csrf_check($input['_csrf_token'] ?? null)) {
+                http_response_code(403);
+                echo json_encode(['taken' => false]);
+                return;
+            }
+            if (!empty($quiz['settings']['access_code']) && !$app->auth->hasRole('editor')
+                && empty($_SESSION['quiz_code_ok'][$params['slug']])) {
+                http_response_code(403);
+                echo json_encode(['taken' => false]);
+                return;
+            }
+            $email = strtolower(trim(is_string($input['email'] ?? null) ? $input['email'] : ''));
             if (!$email) {
+                echo json_encode(['taken' => false]); // usato anche come keepalive della sessione
+                return;
+            }
+            if (!ocms_rate_limit_ip('quizmail_' . $params['slug'], 300, 600)) {
+                http_response_code(429);
                 echo json_encode(['taken' => false]);
                 return;
             }
@@ -972,9 +1017,14 @@ HTML;
                     ocms_redirect(ocms_base_url() . '/firma/' . $sheet['slug']);
                 }
             }
-            $nome = trim((string)($_POST['nome'] ?? ''));
-            $cognome = trim((string)($_POST['cognome'] ?? ''));
-            $email = strtolower(trim((string)($_POST['email'] ?? '')));
+            $nome = trim(ocms_post_str('nome'));
+            $cognome = trim(ocms_post_str('cognome'));
+            $email = strtolower(trim(ocms_post_str('email')));
+            // campi corti: prima una "firma" da 6 MB gonfiava il foglio fino a bloccarlo
+            if (mb_strlen($nome) > 100 || mb_strlen($cognome) > 100 || strlen($email) > 254) {
+                ocms_flash_set('error', 'Nome, cognome o email troppo lunghi.');
+                ocms_redirect(ocms_base_url() . '/firma/' . $sheet['slug']);
+            }
             if ($nome === '' || $cognome === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
                 ocms_flash_set('error', 'Compila nome, cognome e una email valida.');
                 ocms_redirect(ocms_base_url() . '/firma/' . $sheet['slug']);
@@ -1155,6 +1205,10 @@ HTML;
 
         // Logout (accetta sia GET che POST per compatibilità, ma il link nel layout usa POST)
         $this->router->any('/logout', function () use ($app) {
+            // solo POST con token: un link esterno non deve poter chiudere la sessione
+            if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST' || !ocms_csrf_verify()) {
+                ocms_redirect(ocms_base_url() . '/admin');
+            }
             $app->auth->logout();
             ocms_redirect(ocms_base_url() . '/admin/login');
         });
@@ -1333,7 +1387,7 @@ HTML;
                 ocms_flash_set('warning', 'Lo slug era già usato da un altro articolo: salvato come "' . $slug . '"');
             }
 
-            $tagsRaw = $_POST['tags'] ?? '';
+            $tagsRaw = ocms_post_str('tags');
             $tagsArray = array_values(array_filter(array_map('trim', explode(',', $tagsRaw))));
 
             // Auto-crea tag se non esistono
@@ -1368,7 +1422,7 @@ HTML;
                 'excerpt' => trim($_POST['excerpt'] ?? ''),
                 'content' => ocms_sanitize_html($_POST['content'] ?? ''),
                 'cover_image' => trim($_POST['cover_image'] ?? ''),
-                'gallery' => json_decode($_POST['gallery'] ?? '[]', true) ?: [],
+                'gallery' => ocms_clean_gallery(json_decode(ocms_post_str('gallery', '[]'), true)),
                 'category' => $_POST['category'] ?? '',
                 'tags' => $tagsArray,
                 'status' => in_array($_POST['status'] ?? '', ['draft', 'published'], true) ? $_POST['status'] : 'draft',
@@ -1613,7 +1667,6 @@ HTML;
                         CURLOPT_HTTPHEADER => $headers,
                         CURLOPT_POSTFIELDS => $body,
                         CURLOPT_TIMEOUT => 60,
-                        CURLOPT_SSL_VERIFYPEER => false,
                     ]);
                     $response = curl_exec($ch);
                     curl_close($ch);
@@ -2298,21 +2351,34 @@ HTML;
                 return;
             }
 
-            $name = ocms_slug($input['name']);
-            $originalName = $input['original_name'] ?? '';
-
-            // Se il nome è cambiato, elimina il vecchio
-            if ($originalName && $originalName !== $name) {
-                $app->storage->delete('menus', $originalName);
+            $name = ocms_slug(is_string($input['name']) ? $input['name'] : '');
+            $originalName = is_string($input['original_name'] ?? null) ? $input['original_name'] : '';
+            if ($name === '') {
+                http_response_code(400);
+                echo json_encode(['error' => 'Nome del menu non valido']);
+                return;
+            }
+            // Si rinomina solo un menu esistente, e non si sovrascrive un altro menu
+            // (prima un editor poteva cancellare qualsiasi menu passando original_name)
+            if ($originalName !== '' && (!ocms_is_safe_slug($originalName) || !$app->storage->exists('menus', $originalName))) {
+                $originalName = '';
+            }
+            if ($name !== $originalName && $app->storage->exists('menus', $name)) {
+                http_response_code(409);
+                echo json_encode(['error' => 'Esiste già un menu con questo nome']);
+                return;
             }
 
             $menu = [
                 'name' => $name,
-                'label' => trim($input['label'] ?? $input['name']),
-                'items' => $input['items'] ?? [],
+                'label' => trim(is_scalar($input['label'] ?? null) ? (string)$input['label'] : (string)$input['name']),
+                'items' => is_array($input['items'] ?? null) ? array_values($input['items']) : [],
             ];
 
             $app->storage->save('menus', $name, $menu);
+            if ($originalName !== '' && $originalName !== $name) {
+                $app->storage->delete('menus', $originalName);
+            }
             echo json_encode(['success' => true, 'name' => $name]);
         });
 
@@ -3025,7 +3091,7 @@ HTML;
                 }
             }
 
-            $tags = array_values(array_filter(array_map('trim', explode(',', $_POST['tags'] ?? ''))));
+            $tags = array_values(array_filter(array_map('trim', explode(',', ocms_post_str('tags')))));
 
             $lesson = array_merge($existingLesson ?? [], [
                 'id' => $existingLesson['id'] ?? (($_POST['id'] ?? '') ?: ocms_uuid()),
@@ -3121,8 +3187,12 @@ HTML;
             }
 
             $input = json_decode(file_get_contents('php://input'), true);
-            $fileName = basename($input['file'] ?? '');
-            if (!$fileName) {
+            $fileName = basename(is_string($input['file'] ?? null) ? $input['file'] : '');
+            if (!ocms_is_safe_slug($params['slug']) || !$app->storage->exists('lessons', $params['slug'])) {
+                echo json_encode(['error' => 'Lezione non trovata']);
+                return;
+            }
+            if (!ocms_is_safe_slug($fileName) || $fileName[0] === '.') {
                 echo json_encode(['error' => 'Nome file mancante']);
                 return;
             }
@@ -3171,55 +3241,79 @@ HTML;
                 ocms_redirect(ocms_base_url() . '/admin/quizzes');
             }
 
-            $isNew = empty($_POST['original_slug']);
-            $slug = ocms_slug($_POST['slug'] ?: $_POST['title']);
-            $originalSlug = $_POST['original_slug'] ?? '';
-
-            if (!$isNew && $originalSlug && $originalSlug !== $slug) {
-                $app->storage->delete('quizzes', $originalSlug);
+            $originalSlug = ocms_post_str('original_slug');
+            if ($originalSlug !== '' && (!ocms_is_safe_slug($originalSlug) || !$app->storage->exists('quizzes', $originalSlug))) {
+                ocms_flash_set('error', 'Quiz originale non trovato');
+                ocms_redirect(ocms_base_url() . '/admin/quizzes');
             }
-
-            $existingQuiz = !$isNew ? $app->storage->find('quizzes', $originalSlug ?: $slug) : null;
+            $isNew = $originalSlug === '';
+            $wanted = ocms_slug(ocms_post_str('slug') ?: ocms_post_str('title'));
+            if ($wanted === '') {
+                ocms_flash_set('error', 'Serve un titolo o uno slug');
+                ocms_redirect(ocms_base_url() . '/admin/quizzes' . ($isNew ? '/new' : '/edit/' . $originalSlug));
+            }
+            // Il quiz esistente si legge prima di toccare qualcosa; uno slug già usato
+            // da un altro quiz non lo sovrascrive più
+            $existingQuiz = $isNew ? null : $app->storage->find('quizzes', $originalSlug);
+            $slug = ocms_unique_slug($app->storage, 'quizzes', $wanted, $originalSlug);
+            if ($slug !== $wanted) {
+                ocms_flash_set('warning', 'Lo slug era già usato da un altro quiz: salvato come "' . $slug . '"');
+            }
 
             // Processa domande
             $questions = [];
-            if (!empty($_POST['questions']) && is_array($_POST['questions'])) {
-                foreach ($_POST['questions'] as $q) {
-                    if (empty(trim($q['text'] ?? ''))) continue;
-                    $questions[] = [
-                        'text' => trim($q['text']),
-                        'correct' => trim($q['correct'] ?? ''),
-                        'wrong' => array_map('trim', $q['wrong'] ?? ['', '', '']),
-                    ];
+            foreach ((is_array($_POST['questions'] ?? null) ? $_POST['questions'] : []) as $q) {
+                if (!is_array($q) || !is_string($q['text'] ?? null) || trim($q['text']) === '') continue;
+                $wrong = [];
+                foreach ((is_array($q['wrong'] ?? null) ? $q['wrong'] : []) as $w) {
+                    $wrong[] = is_string($w) ? trim($w) : '';
                 }
+                $questions[] = [
+                    'text' => trim($q['text']),
+                    'correct' => is_string($q['correct'] ?? null) ? trim($q['correct']) : '',
+                    'wrong' => $wrong ?: ['', '', ''],
+                ];
             }
+            $set = is_array($_POST['settings'] ?? null) ? $_POST['settings'] : [];
 
-            $quiz = [
-                'id' => $_POST['id'] ?: ocms_uuid(),
-                'title' => trim($_POST['title']),
+            $quiz = array_merge($existingQuiz ?? [], [
+                'id' => $existingQuiz['id'] ?? (ocms_post_str('id') ?: ocms_uuid()),
+                'title' => trim(ocms_post_str('title')),
                 'slug' => $slug,
-                'description' => trim($_POST['description'] ?? ''),
+                'description' => trim(ocms_post_str('description')),
                 'questions' => $questions,
                 'settings' => [
-                    'penalty_mode' => !empty($_POST['settings']['penalty_mode']),
-                    'randomize' => !empty($_POST['settings']['randomize']),
-                    'time_limit' => max(0, intval($_POST['settings']['time_limit'] ?? 0)),
-                    'require_auth' => !empty($_POST['settings']['require_auth']),
-                    'active' => !empty($_POST['settings']['active']),
-                    'access_code' => trim($_POST['settings']['access_code'] ?? ''),
+                    'penalty_mode' => !empty($set['penalty_mode']),
+                    'randomize' => !empty($set['randomize']),
+                    'time_limit' => max(0, intval(is_scalar($set['time_limit'] ?? null) ? $set['time_limit'] : 0)),
+                    'require_auth' => !empty($set['require_auth']),
+                    'active' => !empty($set['active']),
+                    'access_code' => is_string($set['access_code'] ?? null) ? trim($set['access_code']) : '',
                 ],
-                'status' => $_POST['status'] ?? 'draft',
-                'author' => $app->auth->user()['username'],
+                'status' => ocms_post_str('status') === 'published' ? 'published' : 'draft',
+                'author' => $existingQuiz['author'] ?? $app->auth->user()['username'],
                 'created_at' => $existingQuiz['created_at'] ?? ocms_now(),
                 'updated_at' => ocms_now(),
-            ];
+            ]);
 
             // Auto-genera codice accesso se vuoto
             if (empty($quiz['settings']['access_code'])) {
-                $quiz['settings']['access_code'] = str_pad(random_int(0, 9999), 4, '0', STR_PAD_LEFT);
+                $quiz['settings']['access_code'] = str_pad((string)random_int(0, 9999), 4, '0', STR_PAD_LEFT);
             }
 
             $app->storage->save('quizzes', $slug, $quiz);
+            if (!$isNew && $originalSlug !== $slug) {
+                // i risultati già raccolti seguono il quiz rinominato
+                foreach ($app->storage->findAll('quiz-results', fn($r) => ($r['quiz_slug'] ?? '') === $originalSlug) as $r) {
+                    if (empty($r['id'])) continue;
+                    $app->storage->update('quiz-results', $r['id'], function ($d) use ($slug) {
+                        if (!$d) return null;
+                        $d['quiz_slug'] = $slug;
+                        return $d;
+                    });
+                }
+                $app->storage->delete('quizzes', $originalSlug);
+            }
             ocms_flash_set('success', $isNew ? 'Quiz creato!' : 'Quiz aggiornato!');
             ocms_redirect(ocms_base_url() . '/admin/quizzes/edit/' . $slug);
         });
@@ -3457,7 +3551,7 @@ HTML;
             $app->auth->requireRole('editor');
             $allTags = [];
             $all = $app->storage->findAll('galleries');
-            foreach ($all as $g) foreach ($g['tags'] ?? [] as $t) { if (!in_array($t, $allTags)) $allTags[] = $t; }
+            foreach ($all as $g) foreach (ocms_clean_tags($g['tags'] ?? []) as $t) { if (!in_array($t, $allTags)) $allTags[] = $t; }
             sort($allTags);
             $app->renderAdmin('galleries/edit', ['gallery' => null, 'allTags' => $allTags]);
         });
@@ -3472,7 +3566,7 @@ HTML;
             }
             $allTags = [];
             $all = $app->storage->findAll('galleries');
-            foreach ($all as $g) foreach ($g['tags'] ?? [] as $t) { if (!in_array($t, $allTags)) $allTags[] = $t; }
+            foreach ($all as $g) foreach (ocms_clean_tags($g['tags'] ?? []) as $t) { if (!in_array($t, $allTags)) $allTags[] = $t; }
             sort($allTags);
             $app->renderAdmin('galleries/edit', ['gallery' => $gallery, 'allTags' => $allTags]);
         });
@@ -3485,46 +3579,71 @@ HTML;
                 return;
             }
 
-            $isNew = empty($_POST['original_slug']);
-            $slug = ocms_slug($_POST['slug'] ?: $_POST['title']);
-            $originalSlug = $_POST['original_slug'] ?? '';
-
-            // Se lo slug e' cambiato, rinomina la directory e elimina il vecchio JSON
-            if (!$isNew && $originalSlug && $originalSlug !== $slug) {
-                $oldDir = ocms_base_path() . '/uploads/gallery/' . $originalSlug;
-                $newDir = ocms_base_path() . '/uploads/gallery/' . $slug;
-                if (is_dir($oldDir) && !is_dir($newDir)) rename($oldDir, $newDir);
-                $app->storage->delete('galleries', $originalSlug);
+            // Lo slug d'origine arriva dal form: deve essere uno slug vero di una galleria
+            // esistente. Prima un "../../data/users" faceva spostare data/ dentro uploads/.
+            $originalSlug = ocms_post_str('original_slug');
+            if ($originalSlug !== '' && (!ocms_is_safe_slug($originalSlug) || !$app->storage->exists('galleries', $originalSlug))) {
+                ocms_flash_set('error', 'Galleria originale non trovata');
+                ocms_redirect(ocms_base_url() . '/admin/galleries');
+                return;
+            }
+            $isNew = $originalSlug === '';
+            $wanted = ocms_slug(ocms_post_str('slug') ?: ocms_post_str('title'));
+            if ($wanted === '') {
+                ocms_flash_set('error', 'Serve un titolo o uno slug');
+                ocms_redirect(ocms_base_url() . '/admin/galleries' . ($isNew ? '/new' : '/edit/' . $originalSlug));
+                return;
+            }
+            $existingGallery = $isNew ? null : $app->storage->find('galleries', $originalSlug);
+            $slug = ocms_unique_slug($app->storage, 'galleries', $wanted, $originalSlug);
+            if ($slug !== $wanted) {
+                ocms_flash_set('warning', 'Lo slug era già usato da un\'altra galleria: salvata come "' . $slug . '"');
             }
 
-            // Crea directory
-            $galleryDir = ocms_base_path() . '/uploads/gallery/' . $slug;
-            if (!is_dir($galleryDir)) mkdir($galleryDir, 0755, true);
+            $galleryRoot = ocms_base_path() . '/uploads/gallery';
+            $galleryDir = $galleryRoot . '/' . $slug;
+            // Se lo slug è cambiato, la cartella delle immagini segue la galleria
+            if (!$isNew && $originalSlug !== $slug) {
+                $oldDir = $galleryRoot . '/' . $originalSlug;
+                if (is_dir($oldDir) && !file_exists($galleryDir)) @rename($oldDir, $galleryDir);
+            }
+            if (!is_dir($galleryDir)) @mkdir($galleryDir, 0755, true);
 
-            $existingGallery = !$isNew ? $app->storage->find('galleries', $originalSlug ?: $slug) : null;
+            // Immagini: solo una lista di oggetti con campi testuali
+            $imagesIn = json_decode(ocms_post_str('images', '[]'), true);
+            $images = [];
+            foreach (is_array($imagesIn) ? $imagesIn : [] as $img) {
+                if (!is_array($img)) continue;
+                $clean = [];
+                foreach ($img as $k => $v) {
+                    if (is_string($k) && (is_string($v) || is_int($v) || is_float($v) || is_bool($v))) {
+                        $clean[$k] = is_string($v) ? mb_substr($v, 0, 2000) : $v;
+                    }
+                }
+                if ($clean) $images[] = $clean;
+            }
 
-            // Processa immagini dal JSON nascosto
-            $images = json_decode($_POST['images'] ?? '[]', true) ?: [];
+            $tags = array_values(array_filter(array_map('trim', explode(',', ocms_post_str('tags')))));
 
-            // Tag
-            $tags = array_filter(array_map('trim', explode(',', $_POST['tags'] ?? '')));
-
-            $gallery = [
-                'id' => $_POST['id'] ?: ocms_uuid(),
-                'title' => trim($_POST['title']),
+            $gallery = array_merge($existingGallery ?? [], [
+                'id' => $existingGallery['id'] ?? (ocms_post_str('id') ?: ocms_uuid()),
+                'title' => trim(ocms_post_str('title')),
                 'slug' => $slug,
-                'description' => trim($_POST['description'] ?? ''),
-                'cover_image' => $_POST['cover_image'] ?? '',
+                'description' => trim(ocms_post_str('description')),
+                'cover_image' => ocms_post_str('cover_image'),
                 'images' => $images,
-                'layout' => $_POST['layout'] ?? 'masonry',
+                'layout' => in_array(ocms_post_str('layout'), ['grid', 'masonry', 'slider', 'carousel'], true) ? ocms_post_str('layout') : 'masonry',
                 'tags' => $tags,
-                'status' => $_POST['status'] ?? 'draft',
-                'author' => $app->auth->user()['username'],
+                'status' => ocms_post_str('status') === 'published' ? 'published' : 'draft',
+                'author' => $existingGallery['author'] ?? $app->auth->user()['username'],
                 'created_at' => $existingGallery['created_at'] ?? ocms_now(),
                 'updated_at' => ocms_now(),
-            ];
+            ]);
 
             $app->storage->save('galleries', $slug, $gallery);
+            if (!$isNew && $originalSlug !== $slug) {
+                $app->storage->delete('galleries', $originalSlug);
+            }
             ocms_flash_set('success', $isNew ? 'Galleria creata!' : 'Galleria aggiornata!');
             ocms_redirect(ocms_base_url() . '/admin/galleries/edit/' . $slug);
         });
@@ -3535,9 +3654,15 @@ HTML;
                 ocms_redirect(ocms_base_url() . '/admin/galleries');
                 return;
             }
+            // Solo gallerie esistenti: prima con ".." come slug partiva la cancellazione di tutto uploads/
+            if (!ocms_is_safe_slug($params['slug']) || !$app->storage->exists('galleries', $params['slug'])) {
+                ocms_flash_set('error', 'Galleria non trovata');
+                ocms_redirect(ocms_base_url() . '/admin/galleries');
+                return;
+            }
             // Elimina directory immagini
             $dir = ocms_base_path() . '/uploads/gallery/' . basename($params['slug']);
-            if (is_dir($dir)) {
+            if (is_dir($dir) && !is_link($dir)) {
                 $files = new RecursiveIteratorIterator(
                     new RecursiveDirectoryIterator($dir, RecursiveDirectoryIterator::SKIP_DOTS),
                     RecursiveIteratorIterator::CHILD_FIRST
@@ -3568,6 +3693,10 @@ HTML;
             }
 
             $slug = basename($params['slug']);
+            if (!ocms_is_safe_slug($slug) || !$app->storage->exists('galleries', $slug)) {
+                echo json_encode(['error' => 'Galleria non trovata: salvala prima di caricare le immagini']);
+                return;
+            }
             $dir = ocms_base_path() . '/uploads/gallery/' . $slug;
             if (!is_dir($dir)) mkdir($dir, 0755, true);
 
@@ -3631,8 +3760,12 @@ HTML;
             }
 
             $input = json_decode(file_get_contents('php://input'), true);
-            $filename = basename($input['filename'] ?? '');
-            if (!$filename) {
+            $filename = basename(is_string($input['filename'] ?? null) ? $input['filename'] : '');
+            if (!ocms_is_safe_slug($params['slug']) || !$app->storage->exists('galleries', $params['slug'])) {
+                echo json_encode(['error' => 'Galleria non trovata']);
+                return;
+            }
+            if (!ocms_is_safe_slug($filename) || $filename[0] === '.') {
                 echo json_encode(['error' => 'Filename mancante']);
                 return;
             }
@@ -3647,10 +3780,7 @@ HTML;
 
         // ─── PACKAGE ───
 
-        $this->router->post('/package/build', function () use ($app) {
-            $app->auth->requireRole('super_administrator');
-            require ocms_base_path() . '/admin/views/package/build.php';
-        });
+        // (la rotta /package/build puntava a una vista mai esistita: rimossa)
 
         // ─── BACKUP ───
 
@@ -4117,20 +4247,21 @@ HTML;
             $publishAt = $this->apiDate($input['publish_at'] ?? '');
             if ($publishAt === null) { http_response_code(400); echo json_encode(['error' => 'publish_at non è una data valida']); return; }
             $input['content'] = $this->apiContent($user, $input['content'] ?? '');
+            if (!is_string($input['title'])) { http_response_code(400); echo json_encode(['error' => 'title deve essere una stringa']); return; }
             $article = [
                 'id' => ocms_uuid(),
                 'title' => trim($input['title']),
                 'slug' => $slug,
-                'excerpt' => trim($input['excerpt'] ?? ''),
+                'excerpt' => is_scalar($input['excerpt'] ?? null) ? trim((string)$input['excerpt']) : '',
                 'content' => $input['content'] ?? '',
-                'cover_image' => trim($input['cover_image'] ?? ''),
-                'gallery' => $input['gallery'] ?? [],
-                'category' => $input['category'] ?? '',
-                'tags' => $input['tags'] ?? [],
-                'status' => $input['status'] ?? 'draft',
+                'cover_image' => is_scalar($input['cover_image'] ?? null) ? trim((string)$input['cover_image']) : '',
+                'gallery' => ocms_clean_gallery($input['gallery'] ?? []),
+                'category' => is_scalar($input['category'] ?? null) ? (string)$input['category'] : '',
+                'tags' => ocms_clean_tags($input['tags'] ?? []),
+                'status' => ($input['status'] ?? '') === 'published' ? 'published' : 'draft',
                 'featured' => !empty($input['featured']),
                 'publish_at' => $publishAt,
-                'meta' => $input['meta'] ?? ['title' => '', 'description' => '', 'og_image' => ''],
+                'meta' => ocms_clean_meta($input['meta'] ?? []),
                 'author' => $user['username'],
                 'created_at' => ocms_now(),
                 'updated_at' => ocms_now(),
@@ -4156,9 +4287,20 @@ HTML;
             if (!is_array($input)) { http_response_code(400); echo json_encode(['error' => 'JSON non valido']); return; }
             $previous = $article;
             if (isset($input['content'])) $input['content'] = $this->apiContent($user, $input['content']);
-            foreach (['title', 'excerpt', 'content', 'cover_image', 'gallery', 'category', 'tags', 'status', 'featured', 'meta'] as $field) {
-                if (isset($input[$field])) $article[$field] = $input[$field];
+            // Ogni campo col suo tipo: un "tags" stringa o un "meta" sbagliato
+            // mandava in errore tutte le pagine del blog
+            foreach (['title', 'excerpt', 'cover_image', 'category'] as $field) {
+                if (isset($input[$field])) {
+                    if (!is_scalar($input[$field])) { http_response_code(400); echo json_encode(['error' => $field . ' deve essere una stringa']); return; }
+                    $article[$field] = trim((string)$input[$field]);
+                }
             }
+            if (isset($input['content'])) $article['content'] = $input['content'];
+            if (isset($input['gallery'])) $article['gallery'] = ocms_clean_gallery($input['gallery']);
+            if (isset($input['tags'])) $article['tags'] = ocms_clean_tags($input['tags']);
+            if (isset($input['meta'])) $article['meta'] = ocms_clean_meta($input['meta']);
+            if (isset($input['status'])) $article['status'] = $input['status'] === 'published' ? 'published' : 'draft';
+            if (isset($input['featured'])) $article['featured'] = !empty($input['featured']);
             if (isset($input['publish_at'])) {
                 $pa = $this->apiDate($input['publish_at']);
                 if ($pa === null) { http_response_code(400); echo json_encode(['error' => 'publish_at non è una data valida']); return; }
@@ -4223,15 +4365,15 @@ HTML;
             $input['content'] = $this->apiContent($user, $input['content'] ?? '');
             $page = [
                 'id' => ocms_uuid(),
-                'title' => trim($input['title']),
+                'title' => is_scalar($input['title']) ? trim((string)$input['title']) : '',
                 'slug' => $slug,
                 'content' => $input['content'] ?? '',
-                'template' => $input['template'] ?? 'default',
-                'layout' => $input['layout'] ?? 'none',
-                'status' => $input['status'] ?? 'draft',
-                'meta' => $input['meta'] ?? ['title' => '', 'description' => '', 'og_image' => ''],
+                'template' => is_string($input['template'] ?? null) ? $input['template'] : 'default',
+                'layout' => is_string($input['layout'] ?? null) ? $input['layout'] : 'none',
+                'status' => ($input['status'] ?? '') === 'published' ? 'published' : 'draft',
+                'meta' => ocms_clean_meta($input['meta'] ?? []),
                 'order' => (int)($input['order'] ?? 0),
-                'parent' => $input['parent'] ?? null,
+                'parent' => is_string($input['parent'] ?? null) ? $input['parent'] : null,
                 'author' => $user['username'],
                 'created_at' => ocms_now(),
                 'updated_at' => ocms_now(),
@@ -4251,9 +4393,16 @@ HTML;
             if (!is_array($input)) { http_response_code(400); echo json_encode(['error' => 'JSON non valido']); return; }
             $previous = $page;
             if (isset($input['content'])) $input['content'] = $this->apiContent($user, $input['content']);
-            foreach (['title', 'content', 'template', 'layout', 'status', 'meta', 'order', 'parent'] as $field) {
-                if (isset($input[$field])) $page[$field] = $input[$field];
+            foreach (['title', 'template', 'layout', 'parent'] as $field) {
+                if (isset($input[$field])) {
+                    if (!is_scalar($input[$field])) { http_response_code(400); echo json_encode(['error' => $field . ' deve essere una stringa']); return; }
+                    $page[$field] = trim((string)$input[$field]);
+                }
             }
+            if (isset($input['content'])) $page['content'] = $input['content'];
+            if (isset($input['meta'])) $page['meta'] = ocms_clean_meta($input['meta']);
+            if (isset($input['status'])) $page['status'] = $input['status'] === 'published' ? 'published' : 'draft';
+            if (isset($input['order'])) $page['order'] = (int)$input['order'];
             $oldSlug = $params['slug'];
             if (!empty($input['slug'])) {
                 $newSlug = ocms_slug((string)$input['slug']);

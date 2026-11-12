@@ -166,7 +166,7 @@ $renderComment = function (array $c, bool $isReply) use ($replies, $commentForm,
         <div class="article-tags">
             <h2 class="sr-only">Tag</h2>
             <ul class="tag-list">
-<?php foreach ($article['tags'] as $tag): if (!is_string($tag) || trim($tag) === '') continue; ?>
+<?php foreach ((array)$article['tags'] as $tag): if (!is_string($tag) || trim($tag) === '') continue; ?>
                 <li><a class="tag" href="<?= ocms_base_url() ?>/blog?tag=<?= rawurlencode(ocms_slug($tag)) ?>"><?= ocms_escape(flavor_tag_label($tag)) ?></a></li>
 <?php endforeach; ?>
             </ul>

@@ -593,6 +593,71 @@ function ocms_rate_limit(string $key, int $maxAttempts = 5, int $windowSeconds =
 }
 
 /**
+ * Valore testuale dal POST: un array al posto di una stringa diventa il default
+ * (prima trim() su un array mandava la pagina in errore 500).
+ */
+function ocms_post_str(string $key, string $default = ''): string {
+    $v = $_POST[$key] ?? null;
+    if (is_string($v)) return $v;
+    if (is_int($v) || is_float($v)) return (string)$v;
+    return $default;
+}
+
+/**
+ * true se la stringa è usabile come nome di file/cartella di un contenuto:
+ * niente separatori, niente "." o "..", niente caratteri di controllo.
+ */
+function ocms_is_safe_slug(string $s): bool {
+    return $s !== '' && $s !== '.' && $s !== '..' && strlen($s) <= 200
+        && strpbrk($s, "/\\") === false && !preg_match('/[\x00-\x1F]/', $s);
+}
+
+/**
+ * Galleria di un articolo: solo una lista di immagini con campi testuali noti.
+ * Dati con forma diversa (chiavi strane, oggetti annidati) venivano stampati
+ * nell'admin e permettevano di iniettare attributi HTML.
+ */
+function ocms_clean_gallery($gallery): array {
+    $out = [];
+    foreach (is_array($gallery) ? $gallery : [] as $img) {
+        if (!is_array($img)) continue;
+        $clean = [];
+        foreach (['url', 'thumb', 'name', 'caption', 'alt', 'filename'] as $k) {
+            if (isset($img[$k]) && is_scalar($img[$k])) $clean[$k] = mb_substr((string)$img[$k], 0, 1000);
+        }
+        if (!empty($clean['url']) && !ocms_url_is_dangerous($clean['url'], true)
+            && (empty($clean['thumb']) || !ocms_url_is_dangerous($clean['thumb'], true))) {
+            $out[] = $clean;
+        }
+    }
+    return $out;
+}
+
+/**
+ * Elenco di tag: accetta array o stringa separata da virgole, restituisce stringhe pulite.
+ */
+function ocms_clean_tags($tags): array {
+    if (is_string($tags)) $tags = explode(',', $tags);
+    $out = [];
+    foreach (is_array($tags) ? $tags : [] as $t) {
+        if (is_scalar($t) && ($t = trim((string)$t)) !== '') $out[] = mb_substr($t, 0, 100);
+    }
+    return array_values(array_unique($out));
+}
+
+/**
+ * Meta SEO: sempre {title, description, og_image} di stringhe.
+ */
+function ocms_clean_meta($meta): array {
+    $meta = is_array($meta) ? $meta : [];
+    $out = [];
+    foreach (['title', 'description', 'og_image'] as $k) {
+        $out[$k] = is_scalar($meta[$k] ?? null) ? mb_substr(trim((string)$meta[$k]), 0, 500) : '';
+    }
+    return $out;
+}
+
+/**
  * Restituisce uno slug libero nella collezione: se $slug è già usato da un
  * documento diverso da $ownSlug aggiunge -2, -3, ...
  */
@@ -873,6 +938,23 @@ function ocms_same_origin_request(): bool {
 }
 
 /**
+ * Pagina da cui arriva la richiesta, solo se è di questo sito; altrimenti la home.
+ * Evita di usare il modulo come trampolino verso siti esterni (open redirect).
+ */
+function ocms_safe_referer(): string {
+    $home = ocms_base_url() . '/';
+    $ref = (string)($_SERVER['HTTP_REFERER'] ?? '');
+    if ($ref === '') return $home;
+    $host = strtolower((string)parse_url($ref, PHP_URL_HOST));
+    $port = parse_url($ref, PHP_URL_PORT);
+    if ($port) $host .= ':' . $port;
+    if ($host !== strtolower((string)($_SERVER['HTTP_HOST'] ?? ''))) return $home;
+    $path = (string)parse_url($ref, PHP_URL_PATH);
+    $query = parse_url($ref, PHP_URL_QUERY);
+    return ($path !== '' ? $path : '/') . ($query ? '?' . $query : '');
+}
+
+/**
  * Rate limit lato server per indirizzo IP (non aggirabile cambiando sessione).
  * Le scuole escono su Internet con un solo IP per tutte le aule:
  * per questo i limiti per IP vanno tenuti larghi e affiancati a quelli per sessione.
@@ -926,8 +1008,15 @@ function ocms_track_visit(string $path, string $type = 'page'): void {
         (new JsonStorage())->updateFile('analytics/' . $date . '.json', function ($data) use ($date, $path, $refHost, $ownHost, $hour) {
             if (!$data) $data = ['date' => $date, 'total' => 0, 'pages' => [], 'referrers' => []];
             $data['total'] = ($data['total'] ?? 0) + 1;
-            $data['pages'][$path] = ($data['pages'][$path] ?? 0) + 1;
-            if ($refHost && $refHost !== $ownHost) {
+            // anche i percorsi (pagine inesistenti inventate) hanno un tetto
+            if (isset($data['pages'][$path]) || count($data['pages'] ?? []) < 2000) {
+                $data['pages'][$path] = ($data['pages'][$path] ?? 0) + 1;
+            }
+            // Referrer: solo nomi di host plausibili e al massimo 300 diversi al giorno
+            // (prima chiunque poteva gonfiare il file inventando Referer a raffica)
+            if ($refHost && $refHost !== $ownHost && strlen($refHost) <= 100
+                && preg_match('/^[a-z0-9.-]+$/i', $refHost)
+                && (isset($data['referrers'][$refHost]) || count($data['referrers'] ?? []) < 300)) {
                 $data['referrers'][$refHost] = ($data['referrers'][$refHost] ?? 0) + 1;
             }
             $data['hours'][$hour] = ($data['hours'][$hour] ?? 0) + 1;
@@ -1051,21 +1140,26 @@ function ocms_render_gallery_shortcode(string $content): string {
         if (!$gallery || ($gallery['status'] ?? '') !== 'published' || empty($gallery['images'])) {
             return '';
         }
-        $slug = ocms_escape($gallery['slug']);
-        $base = ocms_base_url() . '/uploads/gallery/' . $slug . '/';
-        $uid = 'gembed-' . $slug;
-        $images = $gallery['images'];
+        $slugRaw = (string)$m[1];
+        $base = ocms_base_url() . '/uploads/gallery/' . rawurlencode($slugRaw) . '/';
+        // identificatore JS valido (prima conteneva "-": errore di sintassi, la lightbox non partiva)
+        $uid = 'gembed_' . preg_replace('/[^a-z0-9_]/', '_', $slugRaw);
         $html = '<div id="' . $uid . '" style="column-count:3;column-gap:12px;margin:24px 0;">';
-        $jsUrls = [];
-        $jsCaptions = [];
-        foreach ($images as $i => $img) {
-            $thumb = $base . 'thumb_' . ocms_escape($img['filename']);
-            $full = $base . ocms_escape($img['filename']);
-            $title = ocms_escape($img['title'] ?? '');
-            $html .= '<img src="' . $thumb . '" alt="' . $title . '" style="width:100%;border-radius:8px;margin-bottom:12px;cursor:pointer;break-inside:avoid;display:block;" onclick="' . $uid . 'Open(' . $i . ')">';
-            $jsUrls[] = '"' . $full . '"';
-            $jsCaptions[] = '"' . addslashes($img['title'] ?? '') . '"';
+        $urls = [];
+        $captions = [];
+        $n = 0;
+        foreach ((array)$gallery['images'] as $img) {
+            if (!is_array($img) || !is_string($img['filename'] ?? null) || !ocms_is_safe_slug(basename($img['filename']))) continue;
+            $file = rawurlencode(basename($img['filename']));
+            $caption = is_scalar($img['title'] ?? null) ? (string)$img['title'] : '';
+            $html .= '<img src="' . ocms_escape($base . 'thumb_' . $file) . '" alt="' . ocms_escape($caption) . '" loading="lazy" style="width:100%;border-radius:8px;margin-bottom:12px;cursor:pointer;break-inside:avoid;display:block;" onclick="' . $uid . 'Open(' . $n . ')">';
+            $urls[] = $base . $file;
+            $captions[] = $caption;
+            $n++;
         }
+        if ($n === 0) return '';
+        // dati per il JS sempre via json_encode con escape di < > & ' ": nessun testo può chiudere lo <script>
+        $jsFlags = JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE;
         $html .= '</div>';
         // Lightbox + JS
         $html .= '<div id="' . $uid . '-lb" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.92);align-items:center;justify-content:center;cursor:pointer;" onclick="if(event.target===this)' . $uid . 'Close()">';
@@ -1075,7 +1169,7 @@ function ocms_render_gallery_shortcode(string $content): string {
         $html .= '<div style="position:absolute;left:16px;top:50%;color:#fff;font-size:2rem;cursor:pointer;opacity:0.7;transform:translateY(-50%);" onclick="event.stopPropagation();' . $uid . 'Nav(-1)">&#10094;</div>';
         $html .= '<div style="position:absolute;right:16px;top:50%;color:#fff;font-size:2rem;cursor:pointer;opacity:0.7;transform:translateY(-50%);" onclick="event.stopPropagation();' . $uid . 'Nav(1)">&#10095;</div>';
         $html .= '</div>';
-        $html .= '<script>(function(){var u=[' . implode(',', $jsUrls) . '],c=[' . implode(',', $jsCaptions) . '],ci=0,lb=document.getElementById("' . $uid . '-lb"),im=document.getElementById("' . $uid . '-img"),cp=document.getElementById("' . $uid . '-cap");';
+        $html .= '<script>(function(){var u=' . json_encode($urls, $jsFlags) . ',c=' . json_encode($captions, $jsFlags) . ',ci=0,lb=document.getElementById("' . $uid . '-lb"),im=document.getElementById("' . $uid . '-img"),cp=document.getElementById("' . $uid . '-cap");';
         $html .= 'window.' . $uid . 'Open=function(i){ci=i;im.src=u[ci];cp.textContent=c[ci];lb.style.display="flex";};';
         $html .= 'window.' . $uid . 'Close=function(){lb.style.display="none";};';
         $html .= 'window.' . $uid . 'Nav=function(d){ci=(ci+d+u.length)%u.length;im.src=u[ci];cp.textContent=c[ci];};';

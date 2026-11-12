@@ -191,7 +191,7 @@
 
     // Mantiene viva la sessione PHP (il codice d'accesso e il token stanno lì)
     function keepalive() {
-        fetch(Q.emailUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: '' }), credentials: 'same-origin' }).catch(function () {});
+        fetch(Q.emailUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: '', _csrf_token: Q.csrf }), credentials: 'same-origin' }).catch(function () {});
     }
 
     function lock(reason) {
@@ -313,7 +313,7 @@
         };
         if (!email) return go();
         els.startBtn.disabled = true;
-        fetch(Q.emailUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'same-origin', body: JSON.stringify({ email: email }) })
+        fetch(Q.emailUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'same-origin', body: JSON.stringify({ email: email, _csrf_token: Q.csrf }) })
             .then(function (r) { return r.json(); })
             .then(function (d) {
                 if (d && d.taken) fail('Questa email ha già completato il quiz.', emailEl);

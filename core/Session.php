@@ -5,15 +5,32 @@
 class Session {
     public static function start(): void {
         if (session_status() === PHP_SESSION_NONE) {
-            session_name('ocms_session');
+            // Un cookie per installazione, valido solo nel suo percorso: prima /s/ e
+            // /o-cms-ng/ sullo stesso dominio condividevano la sessione e chi era loggato
+            // nella sandbox risultava loggato anche sul sito vero.
+            session_name('ocms_' . substr(sha1(self::installId()), 0, 10));
             $isSecure = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off');
+            $path = rtrim(function_exists('ocms_base_url') ? ocms_base_url() : '', '/') . '/';
             session_start([
                 'cookie_httponly' => true,
                 'cookie_secure' => $isSecure,
                 'cookie_samesite' => 'Lax',
+                'cookie_path' => $path,
                 'use_strict_mode' => true,
             ]);
+            // la sessione appartiene a questa installazione: dati scritti da altre app
+            // dello stesso dominio non valgono come login
+            if (($_SESSION['_ocms_install'] ?? null) !== self::installId()) {
+                $_SESSION = ['_ocms_install' => self::installId()];
+            }
         }
+    }
+
+    /**
+     * Identificativo dell'installazione (percorso della cartella del CMS).
+     */
+    public static function installId(): string {
+        return dirname(__DIR__);
     }
 
     public static function get(string $key, $default = null) {
