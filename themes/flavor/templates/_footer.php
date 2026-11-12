@@ -50,6 +50,9 @@ foreach ($flavorFooterLinks as [$lbl, $u, $blank]): ?>
 <?php foreach (($flavorScripts ?? []) as $flavorScript): ?>
 <script src="<?= ocms_escape(flavor_asset($flavorScript)) ?>" defer></script>
 <?php endforeach; ?>
+<?php foreach ((array) ($flavor['scripts'] ?? []) as $flavorExtra): if (is_string($flavorExtra) && $flavorExtra !== ''): ?>
+<script src="<?= ocms_escape($flavorExtra) ?>" defer></script>
+<?php endif; endforeach; ?>
 <?php if (!empty($seoGlobal['body_scripts']) && is_string($seoGlobal['body_scripts'])): ?>
 <?= $seoGlobal['body_scripts'] . "\n" ?>
 <?php endif; ?>

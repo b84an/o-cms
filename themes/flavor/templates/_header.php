@@ -12,6 +12,8 @@
  *   bare        true = niente header del sito (schermate a tutto schermo)
  *   minimal     true = header con il solo nome del sito e il tema (es. durante un quiz)
  *   progress    true = barra di avanzamento della lettura
+ *   styles      URL assoluti di fogli di stile in più (per le mini-app che usano il tema)
+ *   scripts     URL assoluti di script in più, caricati con defer a fine pagina
  */
 require_once __DIR__ . '/_bootstrap.php';
 
@@ -53,6 +55,9 @@ $flavorIsCurrent = static function (?string $url) use ($flavorReqPath): bool {
     <link rel="preload" href="<?= ocms_escape($base) ?>/assets/ocms/fonts/bricolage-grotesque-latin.woff2" as="font" type="font/woff2" crossorigin>
     <link rel="stylesheet" href="<?= ocms_escape($base) ?>/assets/ocms/tokens.css">
     <link rel="stylesheet" href="<?= ocms_escape(flavor_asset('css/style.css')) ?>">
+<?php foreach ((array) ($flavor['styles'] ?? []) as $flavorStyle): if (is_string($flavorStyle) && $flavorStyle !== ''): ?>
+    <link rel="stylesheet" href="<?= ocms_escape($flavorStyle) ?>">
+<?php endif; endforeach; ?>
 <?php if (!empty($seoGlobal['head_scripts']) && is_string($seoGlobal['head_scripts'])): ?>
     <?= $seoGlobal['head_scripts'] . "\n" ?>
 <?php endif; ?>
