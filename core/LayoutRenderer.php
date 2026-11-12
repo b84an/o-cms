@@ -2,14 +2,9 @@
 /**
  * O-CMS — Layout Renderer
  *
- * Converts a JSON layout structure into rendered HTML. Supports sections,
- * rows, columns, and a variety of content modules (heading, text, image,
- * gallery, video, menu, articles, etc.).
+ * Converte una struttura layout JSON in HTML renderizzato.
  *
- * @package O-CMS
- * @version 1.0.0
- *
- * Layout Structure:
+ * Struttura Layout:
  * {
  *   "id": "base",
  *   "name": "Layout Base",
@@ -40,23 +35,15 @@
  */
 class LayoutRenderer {
     private App $app;
-    /** @var array Current page data (title, content, etc.) for content modules */
     private array $pageData;
 
-    /**
-     * @param App   $app      The main application instance
-     * @param array $pageData Current page data used by content/breadcrumb modules
-     */
     public function __construct(App $app, array $pageData = []) {
         $this->app = $app;
         $this->pageData = $pageData;
     }
 
     /**
-     * Render a complete layout into HTML.
-     *
-     * @param array $layout The layout data with 'sections' array
-     * @return string Rendered HTML
+     * Renderizza un layout completo
      */
     public function render(array $layout): string {
         $html = '';
@@ -67,10 +54,7 @@ class LayoutRenderer {
     }
 
     /**
-     * Render a section (header, main, footer, etc.).
-     *
-     * @param array $section Section definition with tag, class, rows, etc.
-     * @return string Rendered HTML
+     * Renderizza una sezione (header, main, footer, ecc.)
      */
     private function renderSection(array $section): string {
         $tag = $section['tag'] ?? 'section';
@@ -100,10 +84,7 @@ class LayoutRenderer {
     }
 
     /**
-     * Render a row with its columns as a CSS grid.
-     *
-     * @param array $row Row definition with columns and optional gap/class
-     * @return string Rendered HTML
+     * Renderizza una riga con colonne
      */
     private function renderRow(array $row): string {
         $class = 'layout-row';
@@ -129,10 +110,7 @@ class LayoutRenderer {
     }
 
     /**
-     * Render a column and its child modules.
-     *
-     * @param array $col Column definition with width, class, and modules
-     * @return string Rendered HTML
+     * Renderizza una colonna con i suoi moduli
      */
     private function renderColumn(array $col): string {
         $class = 'layout-col';
@@ -147,10 +125,7 @@ class LayoutRenderer {
     }
 
     /**
-     * Render a single module by type.
-     *
-     * @param array $module Module definition with 'type' and 'settings'
-     * @return string Rendered HTML
+     * Renderizza un singolo modulo
      */
     public function renderModule(array $module): string {
         $type = $module['type'] ?? '';
@@ -176,11 +151,11 @@ class LayoutRenderer {
             'icon'       => $this->modIcon($s),
             'columns'    => $this->modColumns($s),
             'articles'   => $this->modArticles($s),
-            default      => "<!-- unknown module: {$type} -->",
+            default      => "<!-- modulo sconosciuto: {$type} -->",
         };
     }
 
-    // ─── MODULE RENDERERS ───
+    // ─── MODULI ───
 
     private function modHeading(array $s): string {
         $tag = $s['tag'] ?? 'h2';
@@ -292,7 +267,7 @@ class LayoutRenderer {
     }
 
     private function modContent(array $s): string {
-        // Insert the current page content with shortcode rendering
+        // Inserisce il contenuto della pagina corrente con rendering shortcode
         $content = $this->pageData['content'] ?? '';
         $content = str_replace('src="/uploads/', 'src="' . ocms_base_url() . '/uploads/', $content);
         $content = ocms_render_gallery_shortcode($content);
@@ -379,11 +354,7 @@ class LayoutRenderer {
     }
 
     /**
-     * Merge a base layout with page-specific section overrides.
-     *
-     * @param array      $base     The base layout
-     * @param array|null $override Page-specific layout overrides (sections matched by ID)
-     * @return array The merged layout
+     * Unisce un layout base con override per pagina specifica
      */
     public static function mergeLayouts(array $base, ?array $override): array {
         if (!$override || empty($override['sections'])) return $base;

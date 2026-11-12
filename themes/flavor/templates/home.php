@@ -1,64 +1,92 @@
-<!DOCTYPE html>
-<html lang="<?= ocms_escape($app->config['language'] ?? 'it') ?>">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><?= ocms_escape($app->config['site_name'] ?? 'O-CMS') ?></title>
-    <meta name="description" content="<?= ocms_escape($app->config['site_description'] ?? '') ?>">
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="<?= ocms_base_url() ?>/themes/flavor/assets/css/style.css">
-</head>
-<body>
-    <?php include dirname(__DIR__) . '/partials/header.php'; ?>
+<?php
+require_once __DIR__ . '/_bootstrap.php';
+$page = (isset($page) && is_array($page)) ? $page : null;
+$featuredList = array_values(is_array($featured ?? null) ? $featured : []);
+$siteName = (string) ($app->config['site_name'] ?? 'O-CMS');
+$siteDesc = (string) ($app->config['site_description'] ?? '');
 
-    <main class="site-main">
-        <section class="hero">
-            <div class="container">
-                <h1><?= isset($page) ? ocms_escape($page['title']) : 'Benvenuto' ?></h1>
-                <div class="content">
-                    <?= $page['content'] ?? '<p>Il tuo sito è pronto. Inizia a creare contenuti dal pannello admin.</p>' ?>
-                </div>
-            </div>
-        </section>
+// Senza articoli in evidenza la home mostra gli ultimi pubblicati
+$homeLatest = false;
+if (!$featuredList) {
+    $featuredList = array_slice($app->storage->findAll('articles', function ($a) {
+        return ($a['status'] ?? '') === 'published' && !ocms_is_future($a['publish_at'] ?? '');
+    }, 'created_at', 'desc'), 0, 7);
+    $homeLatest = true;
+}
+$hasLessons = (bool) $app->storage->findAll('lessons', fn($l) => ($l['status'] ?? '') === 'published');
+$heroImg = is_string($page['hero_image'] ?? null) ? trim($page['hero_image']) : '';
+$heroTitle = $page ? (string) ($page['title'] ?? $siteName) : $siteName;
 
-        <?php $featuredList = $featured ?? []; ?>
-        <?php if (!empty($featuredList)): ?>
-        <section style="padding:0 0 80px;">
-            <div class="container">
-                <h2 style="font-size:1.6rem;font-weight:800;margin-bottom:24px;text-align:center;">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="#f59e0b" stroke="#f59e0b" stroke-width="2" style="vertical-align:-3px;margin-right:6px;"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
-                    In evidenza
-                </h2>
-                <div class="articles-grid">
-                    <?php foreach ($featuredList as $a):
-                        $readTime = max(1, round(str_word_count(strip_tags($a['content'] ?? '')) / 200));
-                    ?>
-                    <article class="article-card">
-                        <?php if (!empty($a['cover_image'])): ?>
-                            <div class="article-cover" style="background-image:url('<?= ocms_base_url() . ocms_escape($a['cover_image']) ?>');"></div>
-                        <?php endif; ?>
-                        <div class="article-body">
-                            <?php if (!empty($a['category'])): ?>
-                                <span class="article-cat"><?= ocms_escape($a['category']) ?></span>
-                            <?php endif; ?>
-                            <h2><a href="<?= ocms_base_url() ?>/blog/<?= ocms_escape($a['slug']) ?>"><?= ocms_escape($a['title']) ?></a></h2>
-                            <?php if (!empty($a['excerpt'])): ?>
-                                <p><?= ocms_escape(ocms_truncate($a['excerpt'], 120)) ?></p>
-                            <?php endif; ?>
-                            <div class="article-meta" style="display:flex;align-items:center;justify-content:space-between;">
-                                <span><?= ocms_format_date($a['created_at'], 'd M Y') ?> · <?= $readTime ?> min</span>
-                                <a href="<?= ocms_base_url() ?>/blog/<?= ocms_escape($a['slug']) ?>" style="display:inline-block;padding:5px 14px;background:rgba(99,102,241,0.12);color:var(--primary-light);border-radius:6px;font-size:0.8rem;font-weight:600;text-decoration:none;">Leggi tutto &rarr;</a>
-                            </div>
-                        </div>
-                    </article>
-                    <?php endforeach; ?>
-                </div>
-            </div>
-        </section>
-        <?php endif; ?>
-    </main>
+$catNames = [];
+foreach ($app->storage->findAll('categories') as $c) { $catNames[$c['slug'] ?? ''] = $c['name'] ?? ''; }
 
-    <?php include dirname(__DIR__) . '/partials/footer.php'; ?>
-</body>
-</html>
+$flavor = [
+    'fullTitle'   => ($page['meta']['title'] ?? '') ?: $siteName,
+    'description' => ($page['meta']['description'] ?? '') ?: $siteDesc,
+    'seo'         => [
+        'title'       => ($page['meta']['title'] ?? '') ?: $siteName,
+        'description' => ($page['meta']['description'] ?? '') ?: $siteDesc,
+        'image'       => ($page['meta']['og_image'] ?? '') ?: $heroImg,
+    ],
+    'bodyClass'   => 'page-home',
+];
+include __DIR__ . '/_header.php';
+?>
+<section class="home-hero wrap<?= $heroImg !== '' ? ' has-figure' : '' ?>">
+    <div class="home-hero-text">
+        <h1 class="display"><?= ocms_escape($heroTitle) ?></h1>
+<?php if ($siteDesc !== ''): ?>
+        <p class="dek"><?= ocms_escape($siteDesc) ?></p>
+<?php endif; ?>
+        <div class="actions">
+            <a class="btn btn-primary" href="<?= ocms_base_url() ?>/blog">Leggi il blog</a>
+<?php if ($hasLessons): ?>
+            <a class="btn btn-ghost" href="<?= ocms_base_url() ?>/lezioni">Sfoglia le lezioni</a>
+<?php endif; ?>
+        </div>
+    </div>
+<?php if ($heroImg !== ''):
+    [$hw, $hh] = flavor_img_size($heroImg); ?>
+    <figure class="home-hero-figure">
+        <img src="<?= ocms_escape(flavor_media($heroImg)) ?>" alt="" <?= $hw > 0 ? 'width="' . $hw . '" height="' . $hh . '"' : '' ?> fetchpriority="high" decoding="async">
+    </figure>
+<?php endif; ?>
+</section>
+
+<?php if ($page && trim((string) ($page['content'] ?? '')) !== ''): ?>
+<section class="wrap home-content prose prose-wide">
+    <?= flavor_content((string) $page['content']) ?>
+</section>
+<?php elseif (!$page): ?>
+<section class="wrap home-content">
+    <p class="muted">Il sito è pronto. Crea una pagina con slug <code>home</code> dal pannello per personalizzare questa introduzione.</p>
+</section>
+<?php endif; ?>
+
+<?php if (!empty($page['sections']) && is_array($page['sections'])): ?>
+<div class="wrap home-sections">
+<?php foreach ($page['sections'] as $section): if (!is_array($section)) continue; ?>
+    <section class="home-section">
+<?php if (!empty($section['title'])): ?>
+        <h2 class="home-section-title"><?= ocms_escape($section['title']) ?></h2>
+<?php endif; ?>
+        <div class="prose"><?= flavor_content((string) ($section['content'] ?? '')) ?></div>
+    </section>
+<?php endforeach; ?>
+</div>
+<?php endif; ?>
+
+<?php if ($featuredList): ?>
+<section class="wrap home-featured" aria-labelledby="home-featured-title">
+    <div class="section-head">
+        <h2 id="home-featured-title"><?= $homeLatest ? 'Ultimi articoli' : 'In evidenza' ?></h2>
+        <a class="link-quiet" href="<?= ocms_base_url() ?>/blog">Tutti gli articoli</a>
+    </div>
+    <div class="post-grid">
+<?php foreach ($featuredList as $i => $a):
+    echo flavor_article_card($a, ['variant' => $i === 0 ? 'lead' : 'standard', 'heading' => 'h3', 'hideFeatured' => true, 'catNames' => $catNames]);
+endforeach; ?>
+    </div>
+</section>
+<?php endif; ?>
+<?php include __DIR__ . '/_footer.php'; ?>

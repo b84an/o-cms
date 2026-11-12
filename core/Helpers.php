@@ -1,19 +1,10 @@
 <?php
 /**
- * O-CMS — Utility Functions
- *
- * Collection of global helper functions used throughout the CMS: UUID generation,
- * slug creation, escaping, CSRF protection, email sending, image resizing,
- * analytics tracking, shortcode rendering, and more.
- *
- * @package O-CMS
- * @version 1.0.0
+ * O-CMS — Funzioni Utilità
  */
 
 /**
- * Generate a UUID v4 (random).
- *
- * @return string A 36-character UUID string
+ * Genera un UUID v4
  */
 function ocms_uuid(): string {
     $data = random_bytes(16);
@@ -23,18 +14,15 @@ function ocms_uuid(): string {
 }
 
 /**
- * Generate a URL-safe slug from a string.
- *
- * @param string $text The input text to slugify
- * @return string Lowercase, hyphenated slug
+ * Genera uno slug URL-safe da una stringa
  */
 function ocms_slug(string $text): string {
-    // Use intl extension if available, otherwise manual fallback
+    // Usa intl se disponibile, altrimenti fallback manuale
     if (function_exists('transliterator_transliterate')) {
         $result = transliterator_transliterate('Any-Latin; Latin-ASCII; Lower()', $text);
         $text = $result ?: (function_exists('mb_strtolower') ? mb_strtolower($text) : strtolower($text));
     } else {
-        // Fallback: remove common accents and convert to lowercase
+        // Fallback: rimuovi accenti comuni e converti in minuscolo
         $text = function_exists('mb_strtolower') ? mb_strtolower($text) : strtolower($text);
         $accents = ['à'=>'a','á'=>'a','â'=>'a','ã'=>'a','ä'=>'a','å'=>'a','è'=>'e','é'=>'e','ê'=>'e','ë'=>'e',
                      'ì'=>'i','í'=>'i','î'=>'i','ï'=>'i','ò'=>'o','ó'=>'o','ô'=>'o','õ'=>'o','ö'=>'o',
@@ -46,28 +34,26 @@ function ocms_slug(string $text): string {
 }
 
 /**
- * Escape a string for safe HTML output.
- *
- * @param string $value The raw string
- * @return string HTML-escaped string
+ * Sanitizza una stringa per output HTML
  */
-function ocms_escape(string $value): string {
-    return htmlspecialchars($value, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+function ocms_escape(mixed $value): string {
+    // Accetta qualsiasi tipo: un valore inatteso nei dati (es. una risposta
+    // salvata come array) non deve mandare in errore 500 un'intera pagina
+    if ($value === null) return '';
+    if (is_bool($value)) $value = $value ? '1' : '';
+    elseif (is_array($value) || is_object($value)) $value = json_encode($value, JSON_UNESCAPED_UNICODE) ?: '';
+    return htmlspecialchars((string)$value, ENT_QUOTES | ENT_HTML5, 'UTF-8');
 }
 
 /**
- * Return the current timestamp in ISO 8601 format.
- *
- * @return string ISO 8601 date string
+ * Restituisce il timestamp corrente in formato ISO 8601
  */
 function ocms_now(): string {
     return date('c');
 }
 
 /**
- * Generate a CSRF token and store it in the session.
- *
- * @return string The CSRF token
+ * Genera un token CSRF e lo salva in sessione
  */
 function ocms_csrf_token(): string {
     if (empty($_SESSION['_csrf_token'])) {
@@ -77,9 +63,7 @@ function ocms_csrf_token(): string {
 }
 
 /**
- * Return an HTML hidden input field containing the CSRF token.
- *
- * @return string HTML <input> element
+ * Restituisce un campo hidden con il token CSRF
  */
 function ocms_csrf_field(): string {
     $token = ocms_escape(ocms_csrf_token());
@@ -87,21 +71,35 @@ function ocms_csrf_field(): string {
 }
 
 /**
- * Verify the CSRF token from the current POST request.
- *
- * @return bool True if the token matches
+ * Verifica il token CSRF dalla richiesta POST
  */
 function ocms_csrf_verify(): bool {
-    $token = $_POST['_csrf_token'] ?? '';
-    return hash_equals($_SESSION['_csrf_token'] ?? '', $token);
+    return ocms_csrf_check($_POST['_csrf_token'] ?? '');
 }
 
 /**
- * Redirect to a URL via Location header and exit.
- *
- * @param string $url  The target URL
- * @param int    $code HTTP status code (default: 302)
- * @return void
+ * Confronta un token con quello di sessione. Un token di sessione vuoto non
+ * vale mai: prima hash_equals('', '') faceva passare le richieste senza token
+ * fatte con una sessione appena creata.
+ */
+function ocms_csrf_check($token): bool {
+    $expected = $_SESSION['_csrf_token'] ?? '';
+    return is_string($expected) && $expected !== '' && is_string($token) && hash_equals($expected, $token);
+}
+
+/**
+ * Verifica il token CSRF ovunque sia stato inviato: campo POST, header
+ * X-CSRF-Token o campo _csrf_token nel corpo JSON.
+ */
+function ocms_csrf_verify_request(): bool {
+    if (ocms_csrf_check($_POST['_csrf_token'] ?? null)) return true;
+    if (ocms_csrf_check($_SERVER['HTTP_X_CSRF_TOKEN'] ?? null)) return true;
+    $json = json_decode((string)file_get_contents('php://input'), true);
+    return is_array($json) && ocms_csrf_check($json['_csrf_token'] ?? null);
+}
+
+/**
+ * Redirect con header Location
  */
 function ocms_redirect(string $url, int $code = 302): void {
     http_response_code($code);
@@ -110,19 +108,14 @@ function ocms_redirect(string $url, int $code = 302): void {
 }
 
 /**
- * Return the filesystem base path of the CMS installation.
- *
- * @return string Absolute directory path
+ * Restituisce il percorso base del CMS
  */
 function ocms_base_path(): string {
     return dirname(__DIR__);
 }
 
 /**
- * Return the filesystem path to the data directory.
- *
- * @param string $sub Optional subdirectory to append
- * @return string Absolute path
+ * Restituisce il percorso alla cartella data
  */
 function ocms_data_path(string $sub = ''): string {
     $path = ocms_base_path() . '/data';
@@ -133,9 +126,7 @@ function ocms_data_path(string $sub = ''): string {
 }
 
 /**
- * Return the site base URL (e.g. '/s').
- *
- * @return string URL path without trailing slash
+ * Restituisce l'URL base del sito
  */
 function ocms_base_url(): string {
     $config = ocms_config();
@@ -143,9 +134,18 @@ function ocms_base_url(): string {
 }
 
 /**
- * Load the global site configuration (statically cached).
- *
- * @return array Configuration key-value pairs
+ * Restituisce l'URL assoluto del sito (con scheme + host)
+ */
+function ocms_absolute_url(string $path = ''): string {
+    $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') || (($_SERVER['SERVER_PORT'] ?? '') == 443) ? 'https' : 'http';
+    $host = $_SERVER['HTTP_HOST'] ?? 'localhost';
+    $base = ocms_base_url();
+    if ($path !== '' && $path[0] !== '/') $path = '/' . $path;
+    return $scheme . '://' . $host . $base . $path;
+}
+
+/**
+ * Carica la configurazione globale (con cache statica)
  */
 function ocms_config(): array {
     static $config = null;
@@ -157,20 +157,14 @@ function ocms_config(): array {
 }
 
 /**
- * Store a flash message in the session.
- *
- * @param string $type    Message type (e.g. 'success', 'error', 'warning')
- * @param string $message The message text
- * @return void
+ * Flash message — salva un messaggio nella sessione
  */
 function ocms_flash_set(string $type, string $message): void {
     $_SESSION['_flash'][] = ['type' => $type, 'message' => $message];
 }
 
 /**
- * Retrieve and clear all flash messages from the session.
- *
- * @return array List of flash message arrays with 'type' and 'message'
+ * Flash message — recupera e cancella i messaggi
  */
 function ocms_flash_get(): array {
     $messages = $_SESSION['_flash'] ?? [];
@@ -179,11 +173,7 @@ function ocms_flash_get(): array {
 }
 
 /**
- * Truncate a string to the specified length, appending an ellipsis.
- *
- * @param string $text   The input string
- * @param int    $length Maximum length (default: 160)
- * @return string Truncated string
+ * Tronca una stringa alla lunghezza specificata
  */
 function ocms_truncate(string $text, int $length = 160): string {
     $len = function_exists('mb_strlen') ? mb_strlen($text) : strlen($text);
@@ -194,11 +184,7 @@ function ocms_truncate(string $text, int $length = 160): string {
 }
 
 /**
- * Format an ISO date string into a human-readable format.
- *
- * @param string $date   ISO 8601 date string
- * @param string $format PHP date format (default: 'd/m/Y H:i')
- * @return string Formatted date
+ * Formatta una data ISO in formato leggibile
  */
 function ocms_format_date(string $date, string $format = 'd/m/Y H:i'): string {
     $dt = new DateTime($date);
@@ -206,44 +192,97 @@ function ocms_format_date(string $date, string $format = 'd/m/Y H:i'): string {
 }
 
 /**
- * Send an email using the configured method (SMTP or PHP mail).
- *
- * @param string $to       Recipient email address
- * @param string $subject  Email subject
- * @param string $htmlBody HTML body content
- * @return bool True on success
+ * FoglioFirme: verifica se un evento è scaduto in base ad auto_close_at
  */
-function ocms_send_mail(string $to, string $subject, string $htmlBody): bool {
-    $config = ocms_config();
-    $smtp = $config['smtp'] ?? [];
-    $method = $smtp['method'] ?? 'smtp';
-    $fromEmail = $smtp['from_email'] ?? '';
-    $fromName = $smtp['from_name'] ?? ($config['site_name'] ?? 'O-CMS');
-
-    if (empty($fromEmail)) {
+function ocms_fogliofirme_is_expired(array $sheet): bool {
+    $close = trim((string)($sheet['auto_close_at'] ?? ''));
+    if ($close === '') return false;
+    try {
+        $dt = new DateTime($close, new DateTimeZone(ocms_config()['timezone'] ?? 'Europe/Rome'));
+        $now = new DateTime('now', new DateTimeZone(ocms_config()['timezone'] ?? 'Europe/Rome'));
+        return $now >= $dt;
+    } catch (\Throwable $e) {
         return false;
     }
-
-    if ($method === 'php_mail') {
-        return ocms_send_mail_php($to, $subject, $htmlBody, $fromEmail, $fromName);
-    }
-
-    return ocms_send_mail_smtp($to, $subject, $htmlBody, $smtp, $fromEmail, $fromName);
 }
 
 /**
- * Send an email using PHP's built-in mail() function.
- *
- * @param string $to        Recipient email address
- * @param string $subject   Email subject
- * @param string $htmlBody  HTML body content
- * @param string $fromEmail Sender email address
- * @param string $fromName  Sender display name
- * @return bool True on success
+ * FoglioFirme: URL pubblico dell'API di generazione QR (esterna, nessun peso lato server).
+ * L'URL codifica il link pubblico di firma.
  */
-function ocms_send_mail_php(string $to, string $subject, string $htmlBody, string $fromEmail, string $fromName): bool {
-    $headers = "From: {$fromName} <{$fromEmail}>\r\n";
-    $headers .= "Reply-To: {$fromEmail}\r\n";
+function ocms_fogliofirme_qr_url(string $data, int $size = 400): string {
+    return 'https://api.qrserver.com/v1/create-qr-code/?size=' . $size . 'x' . $size
+        . '&margin=10&ecc=M&data=' . urlencode($data);
+}
+
+/**
+ * Invia email tramite il metodo configurato nelle impostazioni (SMTP o PHP mail)
+ */
+function ocms_send_mail(string $to, string $subject, string $htmlBody, string $replyTo = ''): bool {
+    $config = ocms_config();
+    $smtp = $config['smtp'] ?? [];
+    $method = $smtp['method'] ?? 'smtp';
+    $fromEmail = trim((string)($smtp['from_email'] ?? ''));
+    $fromName = ocms_mail_header_safe((string)($smtp['from_name'] ?? ($config['site_name'] ?? 'O-CMS')));
+
+    // Indirizzi validi e senza a capo: è la difesa contro l'header injection
+    // e contro i comandi SMTP infilati nei campi dei form.
+    $to = trim($to);
+    if (!filter_var($to, FILTER_VALIDATE_EMAIL) || !filter_var($fromEmail, FILTER_VALIDATE_EMAIL)) {
+        return false;
+    }
+    $replyTo = trim($replyTo);
+    if ($replyTo !== '' && !filter_var($replyTo, FILTER_VALIDATE_EMAIL)) {
+        $replyTo = '';
+    }
+    $subject = ocms_mail_header_safe($subject);
+
+    if ($method === 'php_mail') {
+        return ocms_send_mail_php($to, $subject, $htmlBody, $fromEmail, $fromName, $replyTo);
+    }
+
+    return ocms_send_mail_smtp($to, $subject, $htmlBody, $smtp, $fromEmail, $fromName, $replyTo);
+}
+
+/**
+ * Rende sicuro un valore da mettere in un header email: niente CR, LF né caratteri di controllo.
+ */
+function ocms_mail_header_safe(string $value): string {
+    $value = preg_replace('/[\x00-\x1F\x7F]+/u', ' ', $value) ?? '';
+    return trim(function_exists('mb_substr') ? mb_substr($value, 0, 250) : substr($value, 0, 250));
+}
+
+/**
+ * Codifica un header in UTF-8 (RFC 2047) se contiene caratteri non ASCII.
+ */
+function ocms_mail_encode_header(string $value): string {
+    if (preg_match('/[^\x20-\x7E]/', $value)) {
+        return '=?UTF-8?B?' . base64_encode($value) . '?=';
+    }
+    return $value;
+}
+
+/**
+ * Prepara il corpo per il comando DATA: righe CRLF e dot-stuffing (RFC 5321 §4.5.2),
+ * così nessuna riga del corpo può chiudere il messaggio in anticipo.
+ */
+function ocms_mail_body_safe(string $body): string {
+    $body = str_replace(["\r\n", "\r"], "\n", $body);
+    $lines = explode("\n", $body);
+    foreach ($lines as &$line) {
+        if ($line !== '' && $line[0] === '.') $line = '.' . $line;
+    }
+    unset($line);
+    return implode("\r\n", $lines);
+}
+
+/**
+ * Invia email con PHP mail()
+ */
+function ocms_send_mail_php(string $to, string $subject, string $htmlBody, string $fromEmail, string $fromName, string $replyTo = ''): bool {
+    $subject = ocms_mail_encode_header(ocms_mail_header_safe($subject));
+    $headers = "From: " . ocms_mail_encode_header(ocms_mail_header_safe($fromName)) . " <{$fromEmail}>\r\n";
+    $headers .= "Reply-To: " . ($replyTo !== '' ? $replyTo : $fromEmail) . "\r\n";
     $headers .= "MIME-Version: 1.0\r\n";
     $headers .= "Content-Type: text/html; charset=UTF-8\r\n";
 
@@ -251,17 +290,11 @@ function ocms_send_mail_php(string $to, string $subject, string $htmlBody, strin
 }
 
 /**
- * Send an email via direct SMTP socket connection.
- *
- * @param string $to        Recipient email address
- * @param string $subject   Email subject
- * @param string $htmlBody  HTML body content
- * @param array  $smtp      SMTP configuration (host, port, username, password, encryption)
- * @param string $fromEmail Sender email address
- * @param string $fromName  Sender display name
- * @return bool True on success
+ * Invia email tramite SMTP diretto
  */
-function ocms_send_mail_smtp(string $to, string $subject, string $htmlBody, array $smtp, string $fromEmail, string $fromName): bool {
+function ocms_send_mail_smtp(string $to, string $subject, string $htmlBody, array $smtp, string $fromEmail, string $fromName, string $replyTo = ''): bool {
+    $subject = ocms_mail_header_safe($subject);
+    $fromName = ocms_mail_header_safe($fromName);
     if (empty($smtp['host'])) {
         return false;
     }
@@ -272,7 +305,7 @@ function ocms_send_mail_smtp(string $to, string $subject, string $htmlBody, arra
     $pass = $smtp['password'] ?? '';
     $encryption = $smtp['encryption'] ?? 'tls';
 
-    // Connection
+    // Connessione
     $prefix = ($encryption === 'ssl') ? 'ssl://' : '';
     $socket = @fsockopen($prefix . $host, $port, $errno, $errstr, 10);
     if (!$socket) {
@@ -324,14 +357,15 @@ function ocms_send_mail_smtp(string $to, string $subject, string $htmlBody, arra
     $send("RCPT TO:<{$to}>");
     $send('DATA');
 
-    $headers = "From: {$fromName} <{$fromEmail}>\r\n";
+    $headers = "From: " . ocms_mail_encode_header($fromName) . " <{$fromEmail}>\r\n";
     $headers .= "To: {$to}\r\n";
-    $headers .= "Subject: {$subject}\r\n";
+    if ($replyTo !== '') $headers .= "Reply-To: {$replyTo}\r\n";
+    $headers .= "Subject: " . ocms_mail_encode_header($subject) . "\r\n";
     $headers .= "MIME-Version: 1.0\r\n";
     $headers .= "Content-Type: text/html; charset=UTF-8\r\n";
     $headers .= "Date: " . date('r') . "\r\n";
 
-    $message = $headers . "\r\n" . $htmlBody . "\r\n.";
+    $message = $headers . "\r\n" . ocms_mail_body_safe($htmlBody) . "\r\n.";
     $resp = $send($message);
 
     $send('QUIT');
@@ -341,15 +375,8 @@ function ocms_send_mail_smtp(string $to, string $subject, string $htmlBody, arra
 }
 
 /**
- * Resize an image to fixed dimensions with centered crop (GD library).
- * Always saves as JPEG.
- *
- * @param string $srcPath  Source image path
- * @param string $destPath Destination image path
- * @param int    $targetW  Target width in pixels (default: 1200)
- * @param int    $targetH  Target height in pixels (default: 630)
- * @param int    $quality  JPEG quality 0-100 (default: 85)
- * @return bool True on success
+ * Ridimensiona un'immagine a dimensioni fisse con crop centrato (GD)
+ * Salva sempre in JPEG. Restituisce il percorso di destinazione o false.
  */
 function ocms_resize_cover(string $srcPath, string $destPath, int $targetW = 1200, int $targetH = 630, int $quality = 85): bool {
     $info = getimagesize($srcPath);
@@ -359,7 +386,7 @@ function ocms_resize_cover(string $srcPath, string $destPath, int $targetW = 120
     $srcH = $info[1];
     $mime = $info['mime'];
 
-    // Load source image
+    // Carica immagine sorgente
     $src = match ($mime) {
         'image/jpeg' => imagecreatefromjpeg($srcPath),
         'image/png'  => imagecreatefrompng($srcPath),
@@ -369,18 +396,18 @@ function ocms_resize_cover(string $srcPath, string $destPath, int $targetW = 120
     };
     if (!$src) return false;
 
-    // Calculate centered crop to fill the target while preserving aspect ratio
+    // Calcola crop centrato per riempire il target mantenendo il rapporto
     $srcRatio = $srcW / $srcH;
     $targetRatio = $targetW / $targetH;
 
     if ($srcRatio > $targetRatio) {
-        // Image is wider: horizontal crop
+        // Immagine più larga: crop orizzontale
         $cropH = $srcH;
         $cropW = (int)($srcH * $targetRatio);
         $cropX = (int)(($srcW - $cropW) / 2);
         $cropY = 0;
     } else {
-        // Image is taller: vertical crop
+        // Immagine più alta: crop verticale
         $cropW = $srcW;
         $cropH = (int)($srcW / $targetRatio);
         $cropX = 0;
@@ -399,11 +426,13 @@ function ocms_resize_cover(string $srcPath, string $destPath, int $targetW = 120
 }
 
 /**
- * Generate a simple math captcha question.
- *
- * @return array Associative array with 'question' (string) and 'answer' (int)
+ * Genera captcha matematico semplice
  */
 function ocms_captcha_generate(): array {
+    // Una sola domanda per pagina: prima ogni form (es. ogni "Rispondi" ai commenti)
+    // ne generava una nuova e solo l'ultima restava valida
+    static $current = null;
+    if ($current !== null) return $current;
     $a = random_int(1, 20);
     $b = random_int(1, 20);
     $ops = ['+', '-'];
@@ -411,14 +440,11 @@ function ocms_captcha_generate(): array {
     if ($op === '-' && $b > $a) { [$a, $b] = [$b, $a]; }
     $answer = ($op === '+') ? $a + $b : $a - $b;
     $_SESSION['_captcha_answer'] = $answer;
-    return ['question' => "{$a} {$op} {$b} = ?", 'answer' => $answer];
+    return $current = ['question' => "{$a} {$op} {$b} = ?", 'answer' => $answer];
 }
 
 /**
- * Verify a captcha answer against the session-stored expected value.
- *
- * @param string $input The user-submitted answer
- * @return bool True if correct
+ * Verifica la risposta captcha
  */
 function ocms_captcha_verify(string $input): bool {
     $expected = $_SESSION['_captcha_answer'] ?? null;
@@ -428,33 +454,58 @@ function ocms_captcha_verify(string $input): bool {
 }
 
 /**
- * Sanitize HTML by allowing only safe tags (for article/page content).
- * Strips script, iframe, on* attributes, and javascript: URLs.
- *
- * @param string $html The raw HTML to sanitize
- * @return string Sanitized HTML
+ * Sanitizza HTML permettendo solo tag sicuri (per contenuti articoli/pagine)
+ * Rimuove script, iframe, on* attributes, javascript: URLs
  */
 function ocms_sanitize_html(string $html): string {
-    // Allowed tags
+    // Tag HTML permessi
     $allowed = '<h1><h2><h3><h4><h5><h6><p><br><hr><div><span><a><strong><b><em><i><u><s><del>'
              . '<ul><ol><li><blockquote><pre><code><table><thead><tbody><tr><th><td>'
-             . '<img><figure><figcaption><video><source><audio><sub><sup><mark><small>';
+             . '<img><figure><figcaption><video><source><audio><sub><sup><mark><small>'
+             . '<style>';
+
+    // Tag SVG permessi: solo forme, testo, gradienti e filtri.
+    // Volutamente ESCLUSI perche' sono vettori XSS: <script>, <foreignObject>,
+    // <animate>, <set>, <animateTransform>, <use>, <symbol>, <image>.
+    // strip_tags confronta i nomi senza distinguere maiuscole e minuscole,
+    // quindi <linearGradient> combacia con <lineargradient> qui sotto.
+    $allowed .= '<svg><g><defs><marker><path><rect><circle><ellipse><line><polyline><polygon>'
+              . '<text><tspan><textpath><title><desc><lineargradient><radialgradient><stop>'
+              . '<clippath><mask><pattern><filter><fegaussianblur><fedropshadow><feoffset>'
+              . '<femerge><femergenode>';
+
     $html = strip_tags($html, $allowed);
 
-    // Remove on* attributes (onclick, onerror, onload, etc.)
-    $html = preg_replace('/\s+on\w+\s*=\s*["\'][^"\']*["\']/i', '', $html);
-    $html = preg_replace('/\s+on\w+\s*=\s*\S+/i', '', $html);
+    // Attributi pericolosi, controllati tag per tag (mai nel testo: prima le regex
+    // globali mangiavano anche esempi di codice come "on_click = foo" nei <pre>).
+    // Il pattern dei tag rispetta le virgolette, così un ">" dentro un attributo
+    // non nasconde quello che viene dopo.
+    $html = preg_replace_callback(
+        '/<[a-zA-Z][a-zA-Z0-9:-]*(?:[^>"\']|"[^"]*"|\'[^\']*\')*>/',
+        fn($m) => ocms_sanitize_tag($m[0]),
+        $html
+    );
 
-    // Remove javascript: and data: in href/src attributes
-    $html = preg_replace('/href\s*=\s*["\']?\s*javascript\s*:/i', 'href="', $html);
-    $html = preg_replace('/src\s*=\s*["\']?\s*javascript\s*:/i', 'src="', $html);
-    $html = preg_replace('/src\s*=\s*["\']?\s*data\s*:/i', 'src="', $html);
+    // Secondo passaggio "fail closed": tag malformati (virgolette non chiuse) sfuggono
+    // al pattern preciso qui sopra. Un "<" seguito da una lettera nell'HTML è sempre
+    // un tag (il testo usa &lt;), quindi qui si può essere brutali senza toccare il testo.
+    $html = preg_replace_callback('/<[a-zA-Z][^>]*>?/', function ($m) {
+        $tag = preg_replace('/([\s\/"\'])on[a-z0-9_-]*\s*=/i', '$1data-blocked=', $m[0]);
+        return preg_replace('/(java|vb)script\s*:/i', 'blocked:', $tag);
+    }, $html);
 
-    // Remove style attributes containing expression/behavior
-    $html = preg_replace('/style\s*=\s*["\'][^"\']*expression\s*\([^"\']*["\']/i', '', $html);
-    $html = preg_replace('/style\s*=\s*["\'][^"\']*behavior\s*:[^"\']*["\']/i', '', $html);
+    // Ripulisci l'interno dei blocchi <style>: ora che sono permessi servono a
+    // scrivere le infografiche SVG, ma il CSS ha i suoi vettori classici.
+    $html = preg_replace_callback('/(<style\b[^>]*>)(.*?)(<\/style\s*>)/is', function ($m) {
+        $css = $m[2];
+        $css = preg_replace('/@import\b[^;{}]*;?/i', '', $css);
+        $css = preg_replace('/expression\s*\(/i', '(', $css);
+        $css = preg_replace('/behavior\s*:/i', '', $css);
+        $css = preg_replace('/javascript\s*:/i', '', $css);
+        return $m[1] . $css . $m[3];
+    }, $html);
 
-    // Strip base URL from image paths (the editor adds them for preview purposes)
+    // Strip base URL dai path immagini (l'editor li aggiunge per la visualizzazione)
     $bu = ocms_base_url();
     if ($bu !== '' && $bu !== '/') {
         $html = str_replace('src="' . $bu . '/uploads/', 'src="/uploads/', $html);
@@ -465,20 +516,71 @@ function ocms_sanitize_html(string $html): string {
 }
 
 /**
- * Simple session-based rate limiter.
- * Returns true if the action is allowed, false if too frequent.
- *
- * @param string $key            Unique key for the rate-limited action
- * @param int    $maxAttempts    Maximum attempts allowed in the window
- * @param int    $windowSeconds  Time window in seconds (default: 300)
- * @return bool True if the action is permitted
+ * Ripulisce un singolo tag di apertura: toglie gli handler on* e neutralizza
+ * gli URL javascript:/vbscript:/data: (anche se offuscati con entità o spazi).
+ * Gli attributi innocui restano identici al byte.
+ */
+function ocms_sanitize_tag(string $tag): string {
+    if (!preg_match('/^<[a-zA-Z][a-zA-Z0-9:-]*/', $tag, $nm)) return $tag;
+    $head = $nm[0];
+    $rest = substr($tag, strlen($head));
+    $rest = preg_replace_callback(
+        '/([^\s"\'>\/=]+)(\s*=\s*(?:"[^"]*"|\'[^\']*\'|[^\s"\'=<>`]+))?/',
+        function ($m) {
+            $name = strtolower($m[1]);
+            if (str_starts_with($name, 'on')) return '';
+            if (preg_match('/(^|:)(href|src|action|formaction|poster|background|xlink:href|data)$/', $name) && isset($m[2])) {
+                $raw = trim(preg_replace('/^\s*=\s*/', '', $m[2]), '"\'');
+                if (ocms_url_is_dangerous($raw, in_array($name, ['src', 'poster'], true))) {
+                    return $m[1] . '="#"';
+                }
+            }
+            if ($name === 'style' && isset($m[2]) && preg_match('/expression\s*\(|behavior\s*:|javascript\s*:/i', ocms_decode_entities_loose($m[2]))) {
+                return '';
+            }
+            return $m[0];
+        },
+        $rest
+    );
+    return $head . $rest;
+}
+
+/**
+ * Decodifica le entità come fa il browser, anche quelle numeriche senza ";".
+ */
+function ocms_decode_entities_loose(string $s): string {
+    $s = preg_replace_callback('/&#(x[0-9a-f]+|[0-9]+);?/i', function ($m) {
+        $cp = ($m[1][0] === 'x' || $m[1][0] === 'X') ? hexdec(substr($m[1], 1)) : (int)$m[1];
+        if ($cp <= 0 || $cp > 0x10FFFF) return '';
+        return html_entity_decode('&#' . (int)$cp . ';', ENT_QUOTES | ENT_HTML5, 'UTF-8');
+    }, $s);
+    return html_entity_decode($s, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+}
+
+/**
+ * true se l'URL usa uno schema eseguibile (javascript:, vbscript:) o data:
+ * (ammesso solo per immagini raster in src/poster se $allowDataImage).
+ */
+function ocms_url_is_dangerous(string $url, bool $allowDataImage = false): bool {
+    $u = strtolower(preg_replace('/[\x00-\x20\x7F]+/', '', ocms_decode_entities_loose($url)));
+    if (str_starts_with($u, 'javascript:') || str_starts_with($u, 'vbscript:')) return true;
+    if (str_starts_with($u, 'data:')) {
+        // le immagini raster incorporate (base64) nelle <img> sono innocue; SVG no
+        return !($allowDataImage && preg_match('#^data:image/(png|jpe?g|gif|webp|avif);base64,#', $u));
+    }
+    return false;
+}
+
+/**
+ * Rate limiter semplice basato su sessione
+ * Restituisce true se l'azione è permessa, false se troppo frequente
  */
 function ocms_rate_limit(string $key, int $maxAttempts = 5, int $windowSeconds = 300): bool {
     $sessionKey = '_rate_' . $key;
     $now = time();
 
     $attempts = $_SESSION[$sessionKey] ?? [];
-    // Filter out expired attempts
+    // Filtra tentativi scaduti
     $attempts = array_filter($attempts, fn($t) => $t > ($now - $windowSeconds));
 
     if (count($attempts) >= $maxAttempts) {
@@ -491,43 +593,353 @@ function ocms_rate_limit(string $key, int $maxAttempts = 5, int $windowSeconds =
 }
 
 /**
- * Track an anonymized page visit -- saves daily aggregates.
- *
- * @param string $path The visited URL path
- * @param string $type Content type (default: 'page')
- * @return void
+ * Restituisce uno slug libero nella collezione: se $slug è già usato da un
+ * documento diverso da $ownSlug aggiunge -2, -3, ...
  */
-function ocms_track_visit(string $path, string $type = 'page'): void {
-    $date = date('Y-m-d');
-    $file = ocms_data_path('analytics/' . $date . '.json');
-
-    $data = file_exists($file) ? json_decode(file_get_contents($file), true) : [];
-    if (!$data) $data = ['date' => $date, 'total' => 0, 'pages' => [], 'referrers' => []];
-
-    $data['total']++;
-    $data['pages'][$path] = ($data['pages'][$path] ?? 0) + 1;
-
-    $ref = $_SERVER['HTTP_REFERER'] ?? '';
-    if ($ref) {
-        $host = parse_url($ref, PHP_URL_HOST) ?? '';
-        $ownHost = $_SERVER['HTTP_HOST'] ?? '';
-        if ($host && $host !== $ownHost) {
-            $data['referrers'][$host] = ($data['referrers'][$host] ?? 0) + 1;
-        }
+function ocms_unique_slug(JsonStorage $storage, string $collection, string $slug, string $ownSlug = ''): string {
+    $candidate = $slug;
+    $n = 2;
+    while ($candidate !== $ownSlug && $storage->exists($collection, $candidate)) {
+        $candidate = $slug . '-' . $n++;
     }
-
-    // Hour of the day (0-23)
-    $hour = (int)date('G');
-    $data['hours'][$hour] = ($data['hours'][$hour] ?? 0) + 1;
-
-    file_put_contents($file, json_encode($data, JSON_PRETTY_PRINT), LOCK_EX);
+    return $candidate;
 }
 
 /**
- * Load aggregated analytics for a range of days.
- *
- * @param int $days Number of past days to include (default: 30)
- * @return array Aggregated analytics data (days, total, pages, referrers, hours)
+ * Salva la versione precedente di un contenuto in data/revisions/{slug}/.
+ * Se lo slug cambia, la cartella delle revisioni viene spostata insieme al contenuto.
+ */
+function ocms_save_revision(array $previous, string $oldSlug, string $newSlug): void {
+    $oldDir = ocms_data_path('revisions/' . basename($oldSlug));
+    $newDir = ocms_data_path('revisions/' . basename($newSlug));
+    if ($oldSlug !== $newSlug && is_dir($oldDir) && !file_exists($newDir)) {
+        @rename($oldDir, $newDir);
+    }
+    if (!is_dir($newDir)) @mkdir($newDir, 0755, true);
+    $file = $newDir . '/' . date('Y-m-d_H-i-s') . '.json';
+    if (file_exists($file)) $file = $newDir . '/' . date('Y-m-d_H-i-s') . '-' . substr(bin2hex(random_bytes(3)), 0, 4) . '.json';
+    @file_put_contents($file, json_encode($previous, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), LOCK_EX);
+}
+
+/**
+ * true se la data indicata è nel futuro (per la pubblicazione programmata).
+ * Confronta istanti reali, non stringhe: funziona con qualsiasi fuso orario.
+ */
+function ocms_is_future(?string $date): bool {
+    if ($date === null || $date === '') return false;
+    $ts = strtotime($date);
+    return $ts !== false && $ts > time();
+}
+
+/**
+ * true se un articolo è visibile al pubblico: pubblicato e non programmato nel futuro.
+ */
+function ocms_is_public(array $item): bool {
+    return ($item['status'] ?? '') === 'published' && !ocms_is_future($item['publish_at'] ?? '');
+}
+
+/**
+ * Genera la sitemap XML con URL assoluti: solo contenuti pubblicati e non programmati
+ * (pagine, articoli, lezioni, gallerie, quiz), con lastmod.
+ */
+function ocms_generate_sitemap(JsonStorage $storage): string {
+    $esc = fn(string $s) => htmlspecialchars($s, ENT_XML1 | ENT_QUOTES, 'UTF-8');
+    $rows = [[ocms_absolute_url('/'), '', '1.0']];
+    foreach (['blog', 'lezioni', 'gallerie', 'quiz'] as $p) $rows[] = [ocms_absolute_url('/' . $p), '', '0.8'];
+    $groups = [['pages', '/', '0.7'], ['articles', '/blog/', '0.7'], ['lessons', '/lezione/', '0.6'],
+               ['galleries', '/galleria/', '0.5'], ['quizzes', '/quiz/', '0.5']];
+    foreach ($groups as [$coll, $prefix, $prio]) {
+        $items = $storage->findAll($coll, fn($x) => ocms_is_public($x + ['status' => 'published']) && !empty($x['slug']));
+        foreach ($items as $x) {
+            if ($coll === 'pages' && $x['slug'] === 'home') continue;
+            $lastmod = substr((string)($x['updated_at'] ?? $x['created_at'] ?? ''), 0, 10);
+            $rows[] = [ocms_absolute_url($prefix . $x['slug']), $lastmod, $prio];
+        }
+    }
+    $xml = '<?xml version="1.0" encoding="UTF-8"?>' . "\n" . '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">' . "\n";
+    foreach ($rows as [$loc, $lastmod, $prio]) {
+        $xml .= '  <url><loc>' . $esc($loc) . '</loc>'
+              . (preg_match('/^\d{4}-\d{2}-\d{2}$/', $lastmod) ? '<lastmod>' . $lastmod . '</lastmod>' : '')
+              . '<priority>' . $prio . '</priority></url>' . "\n";
+    }
+    return $xml . "</urlset>\n";
+}
+
+/**
+ * robots.txt dal testo delle impostazioni, con la riga Sitemap assoluta sempre presente.
+ */
+function ocms_build_robots(string $robots): string {
+    $robots = rtrim(str_replace("\r\n", "\n", $robots));
+    if ($robots === '') $robots = "User-agent: *\nAllow: /";
+    if (!preg_match('/^\s*Sitemap\s*:/mi', $robots)) {
+        $robots .= "\n\nSitemap: " . ocms_absolute_url('/sitemap.xml');
+    }
+    return $robots . "\n";
+}
+
+/**
+ * Cella CSV sicura per Excel/LibreOffice: un valore che inizia con = + - @ (o tab/CR)
+ * verrebbe interpretato come formula. Un apostrofo davanti lo rende testo.
+ * I numeri veri (es. "-3" o "12.5") restano numeri.
+ */
+function ocms_csv_safe(mixed $value): string {
+    $s = (string)$value;
+    if ($s !== '' && strpbrk($s[0], "=+-@\t\r") !== false && !is_numeric($s)) {
+        return "'" . $s;
+    }
+    return $s;
+}
+
+/**
+ * Trasforma l'HTML di un contenuto in righe di testo confrontabili
+ * (un paragrafo, titolo o voce d'elenco per riga).
+ */
+function ocms_html_to_lines(string $html): array {
+    $html = preg_replace('#<(script|style)\b[^>]*>.*?</\1>#is', '', $html) ?? $html;
+    $html = preg_replace('#<br\s*/?>|</(p|div|h[1-6]|li|tr|blockquote|pre|figcaption|table|ul|ol)>#i', "\n", $html) ?? $html;
+    $text = html_entity_decode(strip_tags($html), ENT_QUOTES | ENT_HTML5, 'UTF-8');
+    $lines = array_map('trim', explode("\n", str_replace("\r", '', $text)));
+    return array_values(array_filter($lines, fn($l) => $l !== ''));
+}
+
+/**
+ * Diff riga per riga (LCS) tra due elenchi di righe.
+ * Restituisce [['op' => '=', '-' o '+', 'text' => ...], ...].
+ * Prefisso e suffisso comuni vengono saltati prima del calcolo; oltre
+ * $maxCells celle (contenuti enormi) ricade su un confronto grossolano.
+ */
+function ocms_line_diff(array $old, array $new, int $maxCells = 3000000): array {
+    $pre = 0;
+    $nOld = count($old); $nNew = count($new);
+    while ($pre < $nOld && $pre < $nNew && $old[$pre] === $new[$pre]) $pre++;
+    $suf = 0;
+    while ($suf < $nOld - $pre && $suf < $nNew - $pre && $old[$nOld - 1 - $suf] === $new[$nNew - 1 - $suf]) $suf++;
+    $a = array_slice($old, $pre, $nOld - $pre - $suf);
+    $b = array_slice($new, $pre, $nNew - $pre - $suf);
+    $out = [];
+    foreach (array_slice($old, 0, $pre) as $l) $out[] = ['op' => '=', 'text' => $l];
+    $n = count($a); $m = count($b);
+    if ($n * $m > $maxCells) {
+        foreach ($a as $l) $out[] = ['op' => '-', 'text' => $l];
+        foreach ($b as $l) $out[] = ['op' => '+', 'text' => $l];
+    } else {
+        // tabella LCS su righe (array di interi per riga: memoria contenuta)
+        $L = array_fill(0, $n + 1, array_fill(0, $m + 1, 0));
+        for ($i = $n - 1; $i >= 0; $i--) {
+            for ($j = $m - 1; $j >= 0; $j--) {
+                $L[$i][$j] = $a[$i] === $b[$j] ? $L[$i + 1][$j + 1] + 1 : max($L[$i + 1][$j], $L[$i][$j + 1]);
+            }
+        }
+        $i = 0; $j = 0;
+        while ($i < $n && $j < $m) {
+            if ($a[$i] === $b[$j]) { $out[] = ['op' => '=', 'text' => $a[$i]]; $i++; $j++; }
+            elseif ($L[$i + 1][$j] >= $L[$i][$j + 1]) { $out[] = ['op' => '-', 'text' => $a[$i]]; $i++; }
+            else { $out[] = ['op' => '+', 'text' => $b[$j]]; $j++; }
+        }
+        for (; $i < $n; $i++) $out[] = ['op' => '-', 'text' => $a[$i]];
+        for (; $j < $m; $j++) $out[] = ['op' => '+', 'text' => $b[$j]];
+    }
+    foreach (array_slice($old, $nOld - $suf) as $l) $out[] = ['op' => '=', 'text' => $l];
+    return $out;
+}
+
+/**
+ * Segreto dell'installazione, generato alla prima richiesta. Sta in un file a parte
+ * (data/secret.json, non accessibile dal web) e MAI in config.json, che viene
+ * mostrato in giro (API /config, impostazioni, backup condivisi).
+ */
+function ocms_app_secret(): string {
+    static $secret = null;
+    if ($secret !== null) return $secret;
+    $new = bin2hex(random_bytes(32));
+    $saved = (new JsonStorage())->updateFile('secret.json', function ($d) use ($new) {
+        if (is_array($d) && !empty($d['app_secret']) && is_string($d['app_secret'])) return null;
+        return ['app_secret' => $new, 'created_at' => date('c')];
+    });
+    if ($saved === null) {
+        $d = (new JsonStorage())->readFile('secret.json');
+        $saved = is_array($d) ? $d : ['app_secret' => $new];
+    }
+    return $secret = (string)$saved['app_secret'];
+}
+
+/**
+ * Token firmato per un uso preciso (es. il link di proiezione di un FoglioFirme).
+ */
+function ocms_signed_token(string $purpose): string {
+    return substr(hash_hmac('sha256', $purpose, ocms_app_secret()), 0, 32);
+}
+
+/**
+ * Cancella una cartella con tutto il contenuto. Non segue i link simbolici.
+ */
+function ocms_rmdir_recursive(string $dir): bool {
+    if (!is_dir($dir) || is_link($dir)) return false;
+    $it = new RecursiveIteratorIterator(
+        new RecursiveDirectoryIterator($dir, FilesystemIterator::SKIP_DOTS),
+        RecursiveIteratorIterator::CHILD_FIRST
+    );
+    foreach ($it as $f) {
+        if ($f->isDir() && !$f->isLink()) @rmdir($f->getPathname());
+        else @unlink($f->getPathname());
+    }
+    return @rmdir($dir);
+}
+
+/**
+ * Estensioni che il server potrebbe eseguire o interpretare come configurazione.
+ * Non devono mai finire in uploads/, in nessun punto del nome (es. foto.php.jpg).
+ */
+function ocms_upload_dangerous_ext(): array {
+    // .py, .sh, .bat ecc. restano ammessi: nelle lezioni sono materiale da scaricare,
+    // Apache non li esegue (e uploads/.htaccess blocca comunque PHP e CGI)
+    return ['php', 'php3', 'php4', 'php5', 'php7', 'php8', 'phtml', 'pht', 'phar', 'phps', 'pgif',
+            'cgi', 'fcgi', 'asp', 'aspx', 'jsp', 'shtml', 'stm', 'htaccess', 'htpasswd', 'ini'];
+}
+
+/**
+ * Controlla il nome di un file caricato.
+ * $allowedExt = whitelist dell'estensione finale (vuota = qualsiasi estensione non pericolosa).
+ * Rifiuta anche i file che iniziano con un punto (.htaccess, .user.ini).
+ */
+function ocms_upload_name_ok(string $name, array $allowedExt = []): bool {
+    $name = basename(str_replace('\\', '/', $name));
+    if ($name === '' || $name[0] === '.') return false;
+    $parts = explode('.', strtolower($name));
+    if (count($parts) < 2) return empty($allowedExt);
+    $dangerous = ocms_upload_dangerous_ext();
+    foreach (array_slice($parts, 1) as $seg) {
+        if (in_array($seg, $dangerous, true)) return false;
+    }
+    $ext = end($parts);
+    return empty($allowedExt) || in_array($ext, $allowedExt, true);
+}
+
+/**
+ * Nome sicuro per i materiali delle lezioni: un sorgente da far scaricare
+ * (Esempio.jsp, index.php, config.ini) non viene scartato ma reso innocuo
+ * come testo (Esempio_jsp.txt), così il server non lo esegue mai.
+ */
+function ocms_lesson_safe_name(string $name): string {
+    $name = preg_replace('/[^a-zA-Z0-9._-]/', '_', basename(str_replace('\\', '/', $name))) ?? '';
+    if ($name === '' || $name === '.' || $name === '..') return '';
+    if ($name[0] === '.') $name = '_' . substr($name, 1);
+    if (!ocms_upload_name_ok($name)) {
+        // niente estensioni eseguibili in nessun punto del nome (Apache con più
+        // estensioni potrebbe eseguire anche "index.php.txt"): index.php → index_php.txt
+        $parts = explode('.', $name);
+        $base = array_shift($parts);
+        $name = $base . ($parts ? '_' . implode('_', $parts) : '') . '.txt';
+    }
+    return ocms_upload_name_ok($name) ? $name : '';
+}
+
+/**
+ * true se la richiesta superava post_max_size: PHP in quel caso svuota
+ * $_POST e $_FILES e il controllo CSRF fallirebbe con un messaggio fuorviante.
+ */
+function ocms_upload_too_big(): bool {
+    return ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && empty($_POST) && empty($_FILES)
+        && (int)($_SERVER['CONTENT_LENGTH'] ?? 0) > 0
+        && !str_contains(strtolower((string)($_SERVER['CONTENT_TYPE'] ?? '')), 'json');
+}
+
+/**
+ * Estensioni coerenti con un tipo MIME rilevato da finfo (per la libreria media).
+ */
+function ocms_ext_for_mime(string $mime): array {
+    $map = [
+        'image/jpeg' => ['jpg', 'jpeg'], 'image/png' => ['png'], 'image/gif' => ['gif'], 'image/webp' => ['webp'],
+        'image/avif' => ['avif'],
+        'application/pdf' => ['pdf'], 'text/plain' => ['txt', 'csv', 'md'], 'application/zip' => ['zip'],
+        'video/mp4' => ['mp4', 'm4v'], 'video/webm' => ['webm'], 'audio/mpeg' => ['mp3'], 'audio/mp3' => ['mp3'],
+        'audio/ogg' => ['ogg', 'oga'], 'audio/wav' => ['wav'], 'audio/x-wav' => ['wav'],
+    ];
+    return $map[$mime] ?? [];
+}
+
+/**
+ * true se la richiesta arriva da una pagina di questo stesso sito
+ * (header Origin o, in mancanza, Referer con lo stesso host).
+ */
+function ocms_same_origin_request(): bool {
+    $host = strtolower((string)($_SERVER['HTTP_HOST'] ?? ''));
+    $src = $_SERVER['HTTP_ORIGIN'] ?? ($_SERVER['HTTP_REFERER'] ?? '');
+    if ($src === '' || $host === '') return false;
+    $srcHost = strtolower((string)parse_url($src, PHP_URL_HOST));
+    $srcPort = parse_url($src, PHP_URL_PORT);
+    if ($srcPort) $srcHost .= ':' . $srcPort;
+    return $srcHost === $host;
+}
+
+/**
+ * Rate limit lato server per indirizzo IP (non aggirabile cambiando sessione).
+ * Le scuole escono su Internet con un solo IP per tutte le aule:
+ * per questo i limiti per IP vanno tenuti larghi e affiancati a quelli per sessione.
+ * $scope sostituisce l'IP quando il limite è globale (es. per username).
+ * Restituisce true se l'azione è consentita (e la conteggia).
+ */
+function ocms_rate_limit_ip(string $key, int $maxAttempts, int $windowSeconds, ?string $scope = null): bool {
+    $ip = $scope ?? ($_SERVER['REMOTE_ADDR'] ?? 'cli');
+    $file = 'cache/ratelimit/' . substr(hash('sha256', $key . '|' . $ip), 0, 32) . '.json';
+    $allowed = true;
+    $now = time();
+    try {
+        (new JsonStorage())->updateFile($file, function ($d) use ($now, $windowSeconds, $maxAttempts, &$allowed) {
+            $hits = array_values(array_filter($d['hits'] ?? [], fn($t) => is_int($t) && $t > $now - $windowSeconds));
+            if (count($hits) >= $maxAttempts) { $allowed = false; return null; }
+            $hits[] = $now;
+            return ['hits' => $hits];
+        });
+    } catch (\Throwable $e) {
+        return true; // se lo storage non funziona non blocchiamo gli utenti
+    }
+    return $allowed;
+}
+
+/**
+ * Controlla senza conteggiare se una chiave per IP ha già superato il limite.
+ */
+function ocms_rate_limited_ip(string $key, int $maxAttempts, int $windowSeconds, ?string $scope = null): bool {
+    $ip = $scope ?? ($_SERVER['REMOTE_ADDR'] ?? 'cli');
+    $file = ocms_data_path('cache/ratelimit/' . substr(hash('sha256', $key . '|' . $ip), 0, 32) . '.json');
+    if (!is_file($file)) return false;
+    $d = json_decode((string)@file_get_contents($file), true);
+    $now = time();
+    $hits = array_filter($d['hits'] ?? [], fn($t) => is_int($t) && $t > $now - $windowSeconds);
+    return count($hits) >= $maxAttempts;
+}
+
+/**
+ * Traccia una visita (anonimizzata) — salva aggregati giornalieri
+ */
+function ocms_track_visit(string $path, string $type = 'page'): void {
+    $date = date('Y-m-d');
+    $ref = $_SERVER['HTTP_REFERER'] ?? '';
+    $refHost = $ref ? (parse_url($ref, PHP_URL_HOST) ?? '') : '';
+    $ownHost = $_SERVER['HTTP_HOST'] ?? '';
+    $hour = (int)date('G');
+
+    // Lettura e scrittura sotto lock: prima una lettura concorrente poteva
+    // trovare il file troncato e azzerare le statistiche del giorno.
+    try {
+        (new JsonStorage())->updateFile('analytics/' . $date . '.json', function ($data) use ($date, $path, $refHost, $ownHost, $hour) {
+            if (!$data) $data = ['date' => $date, 'total' => 0, 'pages' => [], 'referrers' => []];
+            $data['total'] = ($data['total'] ?? 0) + 1;
+            $data['pages'][$path] = ($data['pages'][$path] ?? 0) + 1;
+            if ($refHost && $refHost !== $ownHost) {
+                $data['referrers'][$refHost] = ($data['referrers'][$refHost] ?? 0) + 1;
+            }
+            $data['hours'][$hour] = ($data['hours'][$hour] ?? 0) + 1;
+            return $data;
+        });
+    } catch (\Throwable $e) {
+        // le statistiche non devono mai rompere la pagina
+    }
+}
+
+/**
+ * Carica statistiche per un range di giorni
  */
 function ocms_analytics_range(int $days = 30): array {
     $result = ['days' => [], 'total' => 0, 'pages' => [], 'referrers' => [], 'hours' => array_fill(0, 24, 0)];
@@ -564,14 +976,7 @@ function ocms_analytics_range(int $days = 30): array {
 }
 
 /**
- * Resize an image for gallery thumbnails (fit within max dimensions, preserving aspect ratio).
- *
- * @param string $srcPath  Source image path
- * @param string $destPath Destination image path
- * @param int    $maxW     Maximum width in pixels
- * @param int    $maxH     Maximum height in pixels
- * @param int    $quality  Output quality 0-100 (default: 85)
- * @return bool True on success
+ * Ridimensiona immagine per thumbnail galleria (crop quadrato o libero)
  */
 function ocms_resize_image(string $srcPath, string $destPath, int $maxW, int $maxH, int $quality = 85): bool {
     $info = getimagesize($srcPath);
@@ -590,10 +995,10 @@ function ocms_resize_image(string $srcPath, string $destPath, int $maxW, int $ma
     };
     if (!$src) return false;
 
-    // Fit within maxW x maxH while preserving aspect ratio
+    // Fit within maxW x maxH mantenendo aspect ratio
     $ratio = min($maxW / $srcW, $maxH / $srcH);
     if ($ratio >= 1) {
-        // Image is smaller than target: copy without resizing
+        // Immagine più piccola del target: copia senza resize
         $destW = $srcW;
         $destH = $srcH;
     } else {
@@ -603,7 +1008,7 @@ function ocms_resize_image(string $srcPath, string $destPath, int $maxW, int $ma
 
     $dest = imagecreatetruecolor($destW, $destH);
 
-    // Preserve transparency for PNG
+    // Preserva trasparenza per PNG
     if ($mime === 'image/png') {
         imagealphablending($dest, false);
         imagesavealpha($dest, true);
@@ -622,15 +1027,13 @@ function ocms_resize_image(string $srcPath, string $destPath, int $maxW, int $ma
 }
 
 /**
- * Return a <style> tag setting the CSS variable --site-width from site configuration.
- *
- * @return string HTML <style> element
+ * Restituisce un tag <style> con la variabile CSS --site-width dalla configurazione.
  */
 function ocms_site_width_style(): string {
     $config = ocms_config();
     $value = $config['site_width_value'] ?? '90';
     $unit = $config['site_width_unit'] ?? '%';
-    // Sanitize: allow only digits and decimal point
+    // Sanitize: solo numeri (e punto per decimali)
     $value = preg_replace('/[^0-9.]/', '', $value);
     if ($value === '' || floatval($value) <= 0) $value = '90';
     if (!in_array($unit, ['%', 'px'])) $unit = '%';
@@ -638,10 +1041,7 @@ function ocms_site_width_style(): string {
 }
 
 /**
- * Replace [gallery:slug] shortcodes in content with rendered gallery HTML.
- *
- * @param string $content HTML content possibly containing gallery shortcodes
- * @return string Content with shortcodes replaced by gallery markup
+ * Sostituisce gli shortcode [gallery:slug] nel contenuto con la galleria renderizzata.
  */
 function ocms_render_gallery_shortcode(string $content): string {
     if (strpos($content, '[gallery:') === false) return $content;
@@ -688,10 +1088,7 @@ function ocms_render_gallery_shortcode(string $content): string {
 }
 
 /**
- * Replace [form:slug] shortcodes in content with rendered form HTML.
- *
- * @param string $content HTML content possibly containing form shortcodes
- * @return string Content with shortcodes replaced by form markup
+ * Sostituisce gli shortcode [form:slug] nel contenuto con il form renderizzato.
  */
 function ocms_render_form_shortcode(string $content): string {
     if (strpos($content, '[form:') === false) return $content;
@@ -762,10 +1159,7 @@ function ocms_render_form_shortcode(string $content): string {
 }
 
 /**
- * Return the cover image URL for an article, with fallback to the site logo.
- *
- * @param array $article The article data array
- * @return string Full URL to the cover image
+ * Restituisce l'URL della cover image di un articolo, con fallback al logo del sito.
  */
 function ocms_cover_url(array $article): string {
     if (!empty($article['cover_image'])) {
@@ -777,11 +1171,8 @@ function ocms_cover_url(array $article): string {
 }
 
 /**
- * Filter menu items, excluding those with published === false.
- * Recursively filters children as well.
- *
- * @param array $items Menu items array
- * @return array Filtered menu items
+ * Filtra le voci di menu, escludendo quelle con published === false.
+ * Filtra ricorsivamente anche i children.
  */
 function ocms_filter_menu_items(array $items): array {
     $filtered = [];

@@ -32,12 +32,16 @@ ob_start();
             </div>
             <div class="form-group">
                 <label><?= $isNew ? 'Password *' : 'Nuova Password (lascia vuoto per non cambiare)' ?></label>
-                <input type="password" name="password" class="form-input" <?= $isNew ? 'required' : '' ?> minlength="4" placeholder="<?= $isNew ? 'Minimo 4 caratteri' : 'Lascia vuoto per mantenere' ?>">
+                <input type="password" name="password" class="form-input" <?= $isNew ? 'required' : '' ?> minlength="8" placeholder="<?= $isNew ? 'Minimo 8 caratteri' : 'Lascia vuoto per mantenere' ?>">
             </div>
             <div class="form-group">
                 <label>Ruolo</label>
                 <select name="role" class="form-select">
-                    <?php foreach (Auth::getRoleLabels() as $val => $label): ?>
+                    <?php
+                    $_lv = $app->auth->getRoleHierarchy();
+                    $_my = $_lv[$app->auth->user()['role'] ?? ''] ?? 0;
+                    foreach (Auth::getRoleLabels() as $val => $label):
+                        if (($_lv[$val] ?? 0) > $_my) continue; ?>
                         <option value="<?= $val ?>" <?= ($user['role'] ?? '') === $val ? 'selected' : '' ?>><?= $label ?></option>
                     <?php endforeach; ?>
                 </select>

@@ -1,23 +1,20 @@
 <?php
 /**
- * O-CMS — Search Engine
+ * O-CMS — Motore di Ricerca
  *
- * Full-text search across all CMS content with:
- * - Automatic indexing of all content types
- * - Weighted relevance scoring (title ranks higher than body)
- * - Filters by type, status, category, date range
- * - Result highlighting with contextual snippets
- * - Fuzzy matching (Levenshtein tolerance)
- * - Autocomplete suggestions
- *
- * @package O-CMS
- * @version 1.0.0
+ * Ricerca full-text su tutti i contenuti con:
+ * - Indicizzazione automatica
+ * - Rilevanza pesata (titolo vale più del contenuto)
+ * - Filtri per tipo, stato, categoria, data
+ * - Evidenziazione risultati
+ * - Ricerca fuzzy (tolleranza errori)
+ * - Suggerimenti
  */
 class SearchEngine {
     private App $app;
     private string $indexPath;
 
-    // Weight per field (higher = more relevant)
+    // Pesi per campo (più alto = più rilevante)
     private const WEIGHTS = [
         'title'        => 10,
         'slug'         => 5,
@@ -33,7 +30,7 @@ class SearchEngine {
         'category'     => 5,
     ];
 
-    // Italian and English stop words (ignored during search)
+    // Stop words italiane (ignorate nella ricerca)
     private const STOP_WORDS = [
         'il','lo','la','i','gli','le','un','uno','una','di','del','dello','della',
         'dei','degli','delle','a','al','allo','alla','ai','agli','alle','da','dal',
@@ -43,26 +40,19 @@ class SearchEngine {
         'the','and','or','is','in','to','of','for','a','an','with','on','at','from',
     ];
 
-    /**
-     * @param App $app The main application instance
-     */
     public function __construct(App $app) {
         $this->app = $app;
         $this->indexPath = ocms_data_path('cache/search-index.json');
     }
 
     /**
-     * Perform a full-text search and return results sorted by relevance.
-     *
-     * @param string $query   The search query string
-     * @param array  $options Search options (types, status, category, date_from, date_to, limit, offset)
-     * @return array Result set with 'results', 'total', 'query', and 'tokens'
+     * Ricerca principale — restituisce risultati ordinati per rilevanza
      */
     public function search(string $query, array $options = []): array {
         $query = trim($query);
         if (strlen($query) < 2) return ['results' => [], 'total' => 0, 'query' => $query];
 
-        // Options
+        // Opzioni
         $types = $options['types'] ?? []; // ['page','article','user','category','menu','media','form']
         $status = $options['status'] ?? ''; // 'published', 'draft', ''
         $category = $options['category'] ?? '';
@@ -71,30 +61,30 @@ class SearchEngine {
         $limit = $options['limit'] ?? 50;
         $offset = $options['offset'] ?? 0;
 
-        // Tokenize the query
+        // Tokenizza la query
         $tokens = $this->tokenize($query);
         $queryLower = $this->normalizeText($query);
 
-        // Collect all indexable documents
-        $documents = $this->getAllDocuments();
+        // Raccogli tutti i documenti indicizzabili
+        $documents = $this->getAllDocuments($types);
 
-        // Calculate score for each document
+        // Calcola score per ogni documento
         $scored = [];
         foreach ($documents as $doc) {
-            // Type filter
+            // Filtro tipo
             if (!empty($types) && !in_array($doc['type'], $types)) continue;
 
-            // Status filter
+            // Filtro stato
             if ($status && isset($doc['status']) && $doc['status'] !== $status) continue;
 
-            // Category filter
+            // Filtro categoria
             if ($category && ($doc['category'] ?? '') !== $category) continue;
 
-            // Date filter
+            // Filtro data
             if ($dateFrom && ($doc['date'] ?? '') < $dateFrom) continue;
             if ($dateTo && ($doc['date'] ?? '') > $dateTo) continue;
 
-            // Calculate relevance
+            // Calcola rilevanza
             $score = $this->calculateScore($doc, $tokens, $queryLower);
             if ($score > 0) {
                 $doc['score'] = $score;
@@ -103,7 +93,7 @@ class SearchEngine {
             }
         }
 
-        // Sort by relevance
+        // Ordina per rilevanza
         usort($scored, fn($a, $b) => $b['score'] <=> $a['score']);
 
         $total = count($scored);
@@ -118,21 +108,14 @@ class SearchEngine {
     }
 
     /**
-     * Quick search (for sidebar/autocomplete) -- returns max 8 mixed results.
-     *
-     * @param string $query The search query
-     * @return array Search results (same format as search())
+     * Ricerca rapida (per sidebar) — restituisce max 8 risultati misti
      */
     public function quickSearch(string $query): array {
         return $this->search($query, ['limit' => 8]);
     }
 
     /**
-     * Return autocomplete suggestions based on titles and tags.
-     *
-     * @param string $query The partial search query
-     * @param int    $limit Maximum number of suggestions (default: 5)
-     * @return array List of suggestion strings
+     * Suggerimenti di completamento
      */
     public function suggest(string $query, int $limit = 5): array {
         if (strlen($query) < 2) return [];
@@ -140,7 +123,7 @@ class SearchEngine {
         $queryLower = $this->normalizeText($query);
         $suggestions = [];
 
-        // Collect all titles/names
+        // Raccogli tutti i titoli/nomi
         $docs = $this->getAllDocuments();
         foreach ($docs as $doc) {
             $title = $this->normalizeText($doc['title'] ?? '');
@@ -160,15 +143,16 @@ class SearchEngine {
     }
 
     /**
-     * Collect all searchable documents from every CMS content type.
-     *
-     * @return array List of normalized document arrays
+     * Raccoglie tutti i documenti ricercabili dal CMS
      */
-    private function getAllDocuments(): array {
+    private function getAllDocuments(array $types = []): array {
         $docs = [];
+        // Si leggono solo le collezioni richieste: la ricerca pubblica non deve
+        // decodificare utenti, media e form a ogni query
+        $want = fn(string $type) => empty($types) || in_array($type, $types, true);
 
-        // Pages
-        foreach ($this->app->storage->findAll('pages') as $p) {
+        // Pagine
+        if ($want('page')) foreach ($this->app->storage->findAll('pages') as $p) {
             $docs[] = [
                 'type' => 'page',
                 'id' => $p['slug'],
@@ -186,8 +170,8 @@ class SearchEngine {
             ];
         }
 
-        // Articles
-        foreach ($this->app->storage->findAll('articles') as $a) {
+        // Articoli
+        if ($want('article')) foreach ($this->app->storage->findAll('articles') as $a) {
             $docs[] = [
                 'type' => 'article',
                 'id' => $a['slug'],
@@ -195,7 +179,7 @@ class SearchEngine {
                 'slug' => $a['slug'] ?? '',
                 'content' => strip_tags($a['content'] ?? ''),
                 'excerpt' => $a['excerpt'] ?? '',
-                'status' => $a['status'] ?? 'draft',
+                'status' => ocms_is_future($a['publish_at'] ?? '') ? 'scheduled' : ($a['status'] ?? 'draft'),
                 'category' => $a['category'] ?? '',
                 'tags' => $a['tags'] ?? [],
                 'date' => $a['updated_at'] ?? $a['created_at'] ?? '',
@@ -208,8 +192,8 @@ class SearchEngine {
             ];
         }
 
-        // Lessons
-        foreach ($this->app->storage->findAll('lessons') as $l) {
+        // Lezioni
+        if ($want('lesson')) foreach ($this->app->storage->findAll('lessons') as $l) {
             $docs[] = [
                 'type' => 'lesson',
                 'id' => $l['slug'],
@@ -227,8 +211,8 @@ class SearchEngine {
             ];
         }
 
-        // Categories
-        foreach ($this->app->storage->findAll('categories') as $c) {
+        // Categorie
+        if ($want('category')) foreach ($this->app->storage->findAll('categories') as $c) {
             $docs[] = [
                 'type' => 'category',
                 'id' => $c['slug'],
@@ -242,8 +226,8 @@ class SearchEngine {
             ];
         }
 
-        // Users
-        foreach ($this->app->storage->findAll('users') as $u) {
+        // Utenti
+        if ($want('user')) foreach ($this->app->storage->findAll('users') as $u) {
             $docs[] = [
                 'type' => 'user',
                 'id' => $u['username'],
@@ -259,7 +243,7 @@ class SearchEngine {
         }
 
         // Media
-        foreach ($this->app->storage->findAll('media') as $m) {
+        if ($want('media')) foreach ($this->app->storage->findAll('media') as $m) {
             $docs[] = [
                 'type' => 'media',
                 'id' => $m['id'],
@@ -273,8 +257,8 @@ class SearchEngine {
             ];
         }
 
-        // Forms
-        foreach ($this->app->storage->findAll('forms') as $f) {
+        // Form
+        if ($want('form')) foreach ($this->app->storage->findAll('forms') as $f) {
             $docs[] = [
                 'type' => 'form',
                 'id' => $f['slug'],
@@ -287,9 +271,9 @@ class SearchEngine {
             ];
         }
 
-        // Menus
-        foreach ($this->app->storage->findAll('menus') as $m) {
-            // Also index individual menu item labels
+        // Menu
+        if ($want('menu')) foreach ($this->app->storage->findAll('menus') as $m) {
+            // Indicizza anche le voci del menu
             $labels = [];
             foreach ($m['items'] ?? [] as $item) {
                 $labels[] = $item['label'] ?? '';
@@ -313,10 +297,7 @@ class SearchEngine {
     }
 
     /**
-     * Calculate the relevance score of a document for the given tokens.
-     *
-     * @param string $fullQuery The normalized full query string
-     * @return float The computed relevance score
+     * Calcola lo score di rilevanza di un documento per i token dati
      */
     private function calculateScore(array $doc, array $tokens, string $fullQuery): float {
         $score = 0;
@@ -328,29 +309,29 @@ class SearchEngine {
 
             $normalized = $this->normalizeText($value);
 
-            // Exact match of the full query (high bonus)
+            // Match esatta della query completa (bonus alto)
             if (str_contains($normalized, $fullQuery)) {
                 $score += $weight * 3;
 
-                // Bonus if the field starts with the query
+                // Bonus se inizia con la query
                 if (str_starts_with($normalized, $fullQuery)) {
                     $score += $weight * 2;
                 }
             }
 
-            // Individual token matching
+            // Match per singoli token
             foreach ($tokens as $token) {
                 if (str_contains($normalized, $token)) {
                     $score += $weight;
 
-                    // Bonus for whole-word match
+                    // Bonus per match di parola intera
                     if (preg_match('/\b' . preg_quote($token, '/') . '\b/iu', $normalized)) {
                         $score += $weight * 0.5;
                     }
                 }
             }
 
-            // Fuzzy match (Levenshtein distance) for the title field
+            // Fuzzy match (distanza di Levenshtein) per il titolo
             if ($field === 'title' && strlen($fullQuery) >= 4) {
                 $words = explode(' ', $normalized);
                 foreach ($words as $word) {
@@ -370,28 +351,24 @@ class SearchEngine {
     }
 
     /**
-     * Generate highlighted excerpts with matching tokens emphasized.
-     *
-     * @param array $doc    The document to highlight
-     * @param array $tokens The search tokens
-     * @return array Highlighted text fragments keyed by field name
+     * Genera highlight (estratti con match evidenziati)
      */
     private function highlight(array $doc, array $tokens): array {
         $highlights = [];
 
-        // Highlight in the title
+        // Highlight sul titolo
         $title = $doc['title'] ?? '';
         if ($title) {
             $highlights['title'] = $this->highlightText($title, $tokens);
         }
 
-        // Highlight in excerpt/description
+        // Highlight su excerpt/description
         $excerpt = $doc['excerpt'] ?? $doc['description'] ?? '';
         if ($excerpt) {
             $highlights['excerpt'] = $this->highlightText($excerpt, $tokens);
         }
 
-        // Highlight in content (contextual excerpt)
+        // Highlight sul contenuto (estratto contestuale)
         $content = $doc['content'] ?? '';
         if ($content && $tokens) {
             $highlights['content'] = $this->extractContextualSnippet($content, $tokens, 200);
@@ -401,11 +378,7 @@ class SearchEngine {
     }
 
     /**
-     * Wrap matching tokens in <mark> tags within a text string.
-     *
-     * @param string $text   The input text
-     * @param array  $tokens Tokens to highlight
-     * @return string HTML with highlighted matches
+     * Evidenzia i token in un testo
      */
     private function highlightText(string $text, array $tokens): string {
         $escaped = htmlspecialchars($text);
@@ -417,17 +390,12 @@ class SearchEngine {
     }
 
     /**
-     * Extract a text snippet centered around the first match.
-     *
-     * @param string $text   The full text to extract from
-     * @param array  $tokens Search tokens to locate
-     * @param int    $length Snippet length in characters (default: 200)
-     * @return string Highlighted snippet with ellipsis
+     * Estrae un frammento di testo attorno al primo match
      */
     private function extractContextualSnippet(string $text, array $tokens, int $length = 200): string {
         $textLower = $this->normalizeText($text);
 
-        // Find the position of the first match
+        // Trova la posizione del primo match
         $firstPos = strlen($text);
         foreach ($tokens as $token) {
             $pos = strpos($textLower, $token);
@@ -436,11 +404,11 @@ class SearchEngine {
             }
         }
 
-        // Extract the snippet
+        // Estrai il frammento
         $start = max(0, $firstPos - (int)($length / 3));
         $snippet = substr($text, $start, $length);
 
-        // Clean up start/end boundaries
+        // Pulisci inizio/fine
         if ($start > 0) $snippet = '…' . ltrim($snippet);
         if ($start + $length < strlen($text)) $snippet = rtrim($snippet) . '…';
 
@@ -448,10 +416,7 @@ class SearchEngine {
     }
 
     /**
-     * Tokenize a query string into meaningful words, filtering out stop words.
-     *
-     * @param string $query The raw query
-     * @return array List of normalized token strings
+     * Tokenizza una query in parole significative
      */
     private function tokenize(string $query): array {
         $query = $this->normalizeText($query);
@@ -463,15 +428,12 @@ class SearchEngine {
     }
 
     /**
-     * Normalize text for comparison (lowercase, strip tags, remove accents).
-     *
-     * @param string $text The input text
-     * @return string Normalized text
+     * Normalizza testo per il confronto
      */
     private function normalizeText(string $text): string {
         $text = strip_tags($text);
         $text = function_exists('mb_strtolower') ? mb_strtolower($text) : strtolower($text);
-        // Remove accents
+        // Rimuovi accenti
         $accents = ['à'=>'a','á'=>'a','â'=>'a','ã'=>'a','ä'=>'a','è'=>'e','é'=>'e','ê'=>'e','ë'=>'e',
                      'ì'=>'i','í'=>'i','î'=>'i','ï'=>'i','ò'=>'o','ó'=>'o','ô'=>'o','õ'=>'o','ö'=>'o',
                      'ù'=>'u','ú'=>'u','û'=>'u','ü'=>'u','ñ'=>'n','ç'=>'c','ß'=>'ss'];
@@ -480,9 +442,7 @@ class SearchEngine {
     }
 
     /**
-     * Return available filter options for the search UI.
-     *
-     * @return array Associative array with 'types', 'categories', and 'statuses'
+     * Restituisce le categorie disponibili per i filtri
      */
     public function getFilterOptions(): array {
         return [

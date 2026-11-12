@@ -1,29 +1,22 @@
 <?php
 /**
- * O-CMS — JSON Storage Engine
+ * O-CMS — Motore di storage JSON
  *
- * Handles reading and writing JSON files with file locking for concurrency safety.
- * Each "collection" maps to a subdirectory under data/.
- *
- * @package O-CMS
- * @version 1.0.0
+ * Gestisce lettura/scrittura di file JSON con lock per sicurezza concorrenza.
+ * Ogni "collezione" corrisponde a una sottocartella di data/.
  */
 class JsonStorage {
     private string $basePath;
 
-    /**
-     * @param string|null $basePath Base directory for data storage (defaults to data/)
-     */
     public function __construct(?string $basePath = null) {
         $this->basePath = $basePath ?? ocms_data_path();
     }
 
     /**
-     * Read a single record from a collection.
-     *
-     * @param string $collection Collection name (e.g. "pages", "articles", "users")
-     * @param string $id         Record identifier / filename without .json
-     * @return array|null The decoded data or null if not found
+     * Legge un singolo record da una collezione
+     * @param string $collection Es: "pages", "articles", "users"
+     * @param string $id Nome del file (senza .json)
+     * @return array|null
      */
     public function find(string $collection, string $id): ?array {
         $file = $this->filePath($collection, $id);
@@ -35,13 +28,12 @@ class JsonStorage {
     }
 
     /**
-     * Read all records from a collection, with optional filtering and sorting.
-     *
-     * @param string        $collection Collection name
-     * @param callable|null $filter     Optional filter callback (receives item, returns bool)
-     * @param string        $sortBy     Field name to sort by
-     * @param string        $sortDir    Sort direction: 'asc' or 'desc'
-     * @return array List of matching records
+     * Legge tutti i record di una collezione
+     * @param string $collection
+     * @param callable|null $filter Funzione filtro opzionale
+     * @param string $sortBy Campo per ordinamento
+     * @param string $sortDir 'asc' o 'desc'
+     * @return array
      */
     public function findAll(string $collection, ?callable $filter = null, string $sortBy = 'created_at', string $sortDir = 'desc'): array {
         $dir = $this->collectionPath($collection);
@@ -60,7 +52,7 @@ class JsonStorage {
             $items[] = $item;
         }
 
-        // Sort results
+        // Ordinamento
         usort($items, function ($a, $b) use ($sortBy, $sortDir) {
             $valA = $a[$sortBy] ?? '';
             $valB = $b[$sortBy] ?? '';
@@ -74,39 +66,92 @@ class JsonStorage {
     }
 
     /**
-     * Save a record to a collection (create or overwrite).
-     *
-     * Uses atomic write (tmp file + rename) with exclusive lock.
-     *
-     * @param string $collection Collection name
-     * @param string $id         Record identifier / filename without .json
-     * @param array  $data       The data to encode as JSON
-     * @return bool True on success
+     * Salva un record in una collezione
+     * @param string $collection
+     * @param string $id Nome del file (senza .json)
+     * @param array $data
+     * @return bool
      */
     public function save(string $collection, string $id, array $data): bool {
-        $dir = $this->collectionPath($collection);
-        if (!is_dir($dir)) {
-            mkdir($dir, 0755, true);
-        }
-
         $file = $this->filePath($collection, $id);
-        $json = json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-
-        // Atomic write with exclusive lock
-        $tmp = $file . '.tmp';
-        $written = file_put_contents($tmp, $json, LOCK_EX);
-        if ($written === false) {
-            return false;
-        }
-        return rename($tmp, $file);
+        return $this->withLock($file, fn() => $this->writeJson($file, $data));
     }
 
     /**
-     * Delete a record from a collection.
-     *
-     * @param string $collection Collection name
-     * @param string $id         Record identifier
-     * @return bool True if the file was deleted
+     * Legge, modifica e riscrive un documento sotto lock esclusivo.
+     * $fn riceve il documento attuale (o null se non esiste) e restituisce
+     * il nuovo array da salvare, oppure null per non scrivere nulla.
+     * Restituisce il documento salvato, o null se non è stato scritto.
+     */
+    public function update(string $collection, string $id, callable $fn): ?array {
+        $file = $this->filePath($collection, $id);
+        return $this->withLock($file, function () use ($file, $fn) {
+            $current = is_file($file) ? json_decode((string)file_get_contents($file), true) : null;
+            $next = $fn(is_array($current) ? $current : null);
+            if (!is_array($next)) return null;
+            return $this->writeJson($file, $next) ? $next : null;
+        });
+    }
+
+    /**
+     * Come update() ma su un file qualsiasi relativo a data/.
+     */
+    public function updateFile(string $relativePath, callable $fn): ?array {
+        $file = $this->safeRelative($relativePath);
+        return $this->withLock($file, function () use ($file, $fn) {
+            $current = is_file($file) ? json_decode((string)file_get_contents($file), true) : null;
+            $next = $fn(is_array($current) ? $current : null);
+            if (!is_array($next)) return null;
+            return $this->writeJson($file, $next) ? $next : null;
+        });
+    }
+
+    /**
+     * Esegue $fn tenendo un lock esclusivo legato al file di destinazione.
+     * I file di lock stanno in data/cache/locks/ per non sporcare le collezioni.
+     */
+    private function withLock(string $file, callable $fn): mixed {
+        $lockDir = $this->basePath . '/cache/locks';
+        if (!is_dir($lockDir)) @mkdir($lockDir, 0755, true);
+        $lock = @fopen($lockDir . '/' . md5($file) . '.lock', 'c');
+        if ($lock === false) {
+            return $fn(); // senza lock piuttosto che non salvare
+        }
+        try {
+            flock($lock, LOCK_EX);
+            return $fn();
+        } finally {
+            flock($lock, LOCK_UN);
+            fclose($lock);
+        }
+    }
+
+    /**
+     * Scrittura atomica: file temporaneo univoco nella stessa cartella, poi rename.
+     */
+    private function writeJson(string $file, array $data): bool {
+        $dir = dirname($file);
+        if (!is_dir($dir)) {
+            mkdir($dir, 0755, true);
+        }
+        $json = json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE);
+        if ($json === false) {
+            return false;
+        }
+        $tmp = $file . '.' . bin2hex(random_bytes(6)) . '.tmp';
+        if (file_put_contents($tmp, $json) === false) {
+            @unlink($tmp);
+            return false;
+        }
+        if (!rename($tmp, $file)) {
+            @unlink($tmp);
+            return false;
+        }
+        return true;
+    }
+
+    /**
+     * Elimina un record
      */
     public function delete(string $collection, string $id): bool {
         $file = $this->filePath($collection, $id);
@@ -117,22 +162,14 @@ class JsonStorage {
     }
 
     /**
-     * Check whether a record exists in a collection.
-     *
-     * @param string $collection Collection name
-     * @param string $id         Record identifier
-     * @return bool
+     * Verifica se un record esiste
      */
     public function exists(string $collection, string $id): bool {
         return file_exists($this->filePath($collection, $id));
     }
 
     /**
-     * Count records in a collection, with optional filtering.
-     *
-     * @param string        $collection Collection name
-     * @param callable|null $filter     Optional filter callback
-     * @return int
+     * Conta i record in una collezione
      */
     public function count(string $collection, ?callable $filter = null): int {
         if ($filter) {
@@ -146,59 +183,39 @@ class JsonStorage {
     }
 
     /**
-     * Read a standalone JSON file (not a collection record), e.g. config.json.
-     *
-     * @param string $relativePath Path relative to the base data directory
-     * @return array|null Decoded data or null if not found
+     * Legge un file JSON singolo (non collezione), es: config.json
      */
     public function readFile(string $relativePath): ?array {
-        $file = $this->basePath . '/' . ltrim($relativePath, '/');
-        if (!file_exists($file)) {
+        $file = $this->safeRelative($relativePath);
+        if (!is_file($file)) {
             return null;
         }
-        return json_decode(file_get_contents($file), true);
+        $data = json_decode((string)file_get_contents($file), true);
+        return is_array($data) ? $data : null;
     }
 
     /**
-     * Write a standalone JSON file (not a collection record).
-     *
-     * @param string $relativePath Path relative to the base data directory
-     * @param array  $data         Data to encode as JSON
-     * @return bool True on success
+     * Scrive un file JSON singolo
      */
     public function writeFile(string $relativePath, array $data): bool {
-        $file = $this->basePath . '/' . ltrim($relativePath, '/');
-        $dir = dirname($file);
-        if (!is_dir($dir)) {
-            mkdir($dir, 0755, true);
-        }
-        $json = json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-        $tmp = $file . '.tmp';
-        if (file_put_contents($tmp, $json, LOCK_EX) === false) {
-            return false;
-        }
-        return rename($tmp, $file);
+        $file = $this->safeRelative($relativePath);
+        return $this->withLock($file, fn() => $this->writeJson($file, $data));
     }
 
     /**
-     * Build the filesystem path for a collection directory.
-     *
-     * @param string $collection Collection name
-     * @return string Absolute directory path
+     * Percorso assoluto dentro data/, senza possibilità di uscirne con "..".
      */
+    private function safeRelative(string $relativePath): string {
+        $parts = array_filter(explode('/', str_replace('\\', '/', $relativePath)), fn($p) => $p !== '' && $p !== '.' && $p !== '..');
+        return $this->basePath . '/' . implode('/', $parts);
+    }
+
     private function collectionPath(string $collection): string {
         return $this->basePath . '/' . $collection;
     }
 
-    /**
-     * Build the filesystem path for a specific record file.
-     *
-     * @param string $collection Collection name
-     * @param string $id         Record identifier
-     * @return string Absolute file path
-     */
     private function filePath(string $collection, string $id): string {
-        // Prevent path traversal
+        // Previeni path traversal
         $safeId = basename($id);
         return $this->collectionPath($collection) . '/' . $safeId . '.json';
     }

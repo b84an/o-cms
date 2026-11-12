@@ -13,11 +13,11 @@ ob_start();
 </div>
     <?= ocms_csrf_field() ?>
 
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;align-items:start;">
+    <div class="grid-2">
         <!-- Colonna sinistra -->
         <div>
-            <div class="card" style="margin-bottom:20px;">
-                <h3 style="font-size:1rem;font-weight:700;margin-bottom:16px;">Generale</h3>
+            <div class="card mb-20">
+                <h3 class="card-title">Generale</h3>
                 <div class="form-group">
                     <label>Nome Sito</label>
                     <input type="text" name="site_name" class="form-input" value="<?= ocms_escape($config['site_name'] ?? '') ?>">
@@ -36,30 +36,30 @@ ob_start();
                     <input type="email" name="admin_email" class="form-input" value="<?= ocms_escape($config['admin_email'] ?? '') ?>">
                 </div>
                 <div class="form-group">
-                    <label class="feature-option" style="padding:10px 14px;margin:0;">
+                    <label class="feature-option compact">
                         <input type="checkbox" name="maintenance_mode" <?= !empty($config['maintenance_mode']) ? 'checked' : '' ?>>
                         <div class="feat-info">
                             <span class="feat-title">Modalità Manutenzione</span>
-                            <span class="feat-desc" style="font-size:0.75rem;color:var(--text-muted);">Il sito mostra un avviso di manutenzione ai visitatori</span>
+                            <span class="feat-desc">Il sito mostra un avviso di manutenzione ai visitatori</span>
                         </div>
                     </label>
                 </div>
-                <div class="form-group" style="margin-bottom:0;">
-                    <label class="feature-option" style="padding:10px 14px;margin:0;">
+                <div class="form-group mb-0">
+                    <label class="feature-option compact">
                         <input type="checkbox" name="registration_enabled" <?= !empty($config['registration_enabled']) ? 'checked' : '' ?>>
                         <div class="feat-info">
                             <span class="feat-title">Registrazione Utenti</span>
-                            <span class="feat-desc" style="font-size:0.75rem;color:var(--text-muted);">Abilita la registrazione pubblica con attivazione via email</span>
+                            <span class="feat-desc">Abilita la registrazione pubblica con attivazione via email</span>
                         </div>
                     </label>
                 </div>
             </div>
 
-            <div class="card" style="margin-bottom:20px;">
-                <h3 style="font-size:1rem;font-weight:700;margin-bottom:16px;">Layout</h3>
+            <div class="card mb-20">
+                <h3 class="card-title">Layout</h3>
                 <div class="form-group">
                     <label>Larghezza Sito</label>
-                    <div style="display:flex;gap:10px;align-items:center;">
+                    <div class="flex-row">
                         <input type="number" name="site_width_value" id="site-width-value" class="form-input" style="width:120px;"
                             value="<?= ocms_escape($config['site_width_value'] ?? '90') ?>" min="1">
                         <select name="site_width_unit" id="site-width-unit" class="form-select" style="width:80px;">
@@ -68,14 +68,14 @@ ob_start();
                         </select>
                     </div>
                     <div class="form-hint">Larghezza massima del contenitore principale (default: 90%)</div>
-                    <div id="site-width-preview" style="margin-top:8px;padding:8px 12px;background:var(--bg);border:1px solid var(--border);border-radius:6px;font-family:monospace;font-size:0.82rem;color:var(--text-muted);">
+                    <div class="preview-box" id="site-width-preview">
                         Anteprima: max-width: <?= ocms_escape(($config['site_width_value'] ?? '90') . ($config['site_width_unit'] ?? '%')) ?>
                     </div>
                 </div>
             </div>
 
             <div class="card">
-                <h3 style="font-size:1rem;font-weight:700;margin-bottom:16px;">Localizzazione</h3>
+                <h3 class="card-title">Localizzazione</h3>
                 <div class="form-row">
                     <div class="form-group">
                         <label>Lingua</label>
@@ -93,11 +93,11 @@ ob_start();
                     </div>
                 </div>
                 <div class="form-row">
-                    <div class="form-group" style="margin-bottom:0;">
+                    <div class="form-group mb-0">
                         <label>Formato Data</label>
                         <input type="text" name="date_format" class="form-input" value="<?= ocms_escape($config['date_format'] ?? 'd/m/Y') ?>">
                     </div>
-                    <div class="form-group" style="margin-bottom:0;">
+                    <div class="form-group mb-0">
                         <label>Articoli per Pagina</label>
                         <input type="number" name="posts_per_page" class="form-input" value="<?= (int)($config['posts_per_page'] ?? 10) ?>" min="1" max="100">
                     </div>
@@ -107,9 +107,9 @@ ob_start();
 
         <!-- Colonna destra -->
         <div>
-            <div class="card" style="margin-bottom:20px;">
-                <h3 style="font-size:1rem;font-weight:700;margin-bottom:16px;">Tema</h3>
-                <div class="form-group" style="margin-bottom:0;">
+            <div class="card mb-20">
+                <h3 class="card-title">Tema</h3>
+                <div class="form-group mb-0">
                     <label>Tema Attivo</label>
                     <select name="theme" class="form-select">
                         <?php
@@ -124,8 +124,8 @@ ob_start();
                 </div>
             </div>
 
-            <div class="card" style="margin-bottom:20px;">
-                <h3 style="font-size:1rem;font-weight:700;margin-bottom:16px;">Email</h3>
+            <div class="card mb-20">
+                <h3 class="card-title">Email</h3>
                 <?php $mailMethod = $smtp['method'] ?? 'smtp'; ?>
                 <div class="form-group">
                     <label>Metodo di Invio</label>
@@ -164,32 +164,32 @@ ob_start();
                     </div>
                 </div>
                 <div class="form-row">
-                    <div class="form-group" style="margin-bottom:0;">
+                    <div class="form-group mb-0">
                         <label>Email Mittente</label>
                         <input type="email" name="smtp_from_email" class="form-input" value="<?= ocms_escape($smtp['from_email'] ?? '') ?>" placeholder="noreply@sito.com">
                     </div>
-                    <div class="form-group" style="margin-bottom:0;">
+                    <div class="form-group mb-0">
                         <label>Nome Mittente</label>
                         <input type="text" name="smtp_from_name" class="form-input" value="<?= ocms_escape($smtp['from_name'] ?? '') ?>" placeholder="Il Mio Sito">
                     </div>
                 </div>
-                <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border);">
-                    <div style="display:flex;align-items:center;gap:10px;">
-                        <input type="email" id="test-email-addr" class="form-input" placeholder="Email destinatario test" value="<?= ocms_escape($config['admin_email'] ?? '') ?>" style="flex:1;">
+                <div class="divider-top">
+                    <div class="flex-row">
+                        <input type="email" id="test-email-addr" class="form-input flex-1" placeholder="Email destinatario test" value="<?= ocms_escape($config['admin_email'] ?? '') ?>" aria-label="Email destinatario test">
                         <button type="button" class="btn btn-secondary" id="test-email-btn" onclick="sendTestEmail()">Invia Test</button>
                     </div>
-                    <div id="test-email-result" style="margin-top:8px;font-size:0.85rem;"></div>
-                    <div class="form-hint" style="margin-top:4px;">Salva prima le impostazioni, poi invia il test per verificare la configurazione.</div>
+                    <div class="mt-8 text-sm" id="test-email-result"></div>
+                    <div class="form-hint">Salva prima le impostazioni, poi invia il test per verificare la configurazione.</div>
                 </div>
             </div>
 
-            <div class="card" style="margin-bottom:20px;">
-                <h3 style="font-size:1rem;font-weight:700;margin-bottom:16px;">SEO Globale</h3>
+            <div class="card mb-20">
+                <h3 class="card-title">SEO Globale</h3>
                 <div class="form-group">
                     <label>robots.txt</label>
-                    <textarea name="robots" class="form-textarea" rows="4" style="font-family:monospace;font-size:0.85rem;"><?= ocms_escape($seo['robots'] ?? '') ?></textarea>
+                    <textarea name="robots" class="form-textarea mono" rows="4"><?= ocms_escape($seo['robots'] ?? '') ?></textarea>
                 </div>
-                <div class="form-hint" style="margin-bottom:12px;">La sitemap viene generata automaticamente al salvataggio.</div>
+                <div class="form-hint mb-12">La sitemap viene generata automaticamente al salvataggio.</div>
             </div>
 
             <?php
@@ -200,12 +200,12 @@ ob_start();
             $aiInstructions = $aiConfig['instructions'] ?? $config['ai_instructions'] ?? '';
             $defaultInstructions = "Scrivi come un essere umano brillante, non come un'intelligenza artificiale. Il tono deve essere coinvolgente, chiaro, intelligente, con un filo di ironia sottile ma senza esagerare.";
             ?>
-            <div class="card" style="margin-bottom:20px;">
-                <h3 style="font-size:1rem;font-weight:700;margin-bottom:16px;">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#8b5cf6" stroke-width="2" style="vertical-align:-3px;margin-right:6px;"><path d="M12 2a4 4 0 0 1 4 4c0 1.95-1.4 3.58-3.25 3.93L12 22"/><path d="M8 6a4 4 0 0 1 8 0"/><path d="M17 12.5c1.77.77 3 2.53 3 4.5a5 5 0 0 1-10 0"/><path d="M4 17a5 5 0 0 1 3-4.5"/></svg>
+            <div class="card mb-20">
+                <h3 class="card-title">
+                    <svg class="icon-inline" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#8b5cf6" stroke-width="2"><path d="M12 2a4 4 0 0 1 4 4c0 1.95-1.4 3.58-3.25 3.93L12 22"/><path d="M8 6a4 4 0 0 1 8 0"/><path d="M17 12.5c1.77.77 3 2.53 3 4.5a5 5 0 0 1-10 0"/><path d="M4 17a5 5 0 0 1 3-4.5"/></svg>
                     Intelligenza Artificiale
                 </h3>
-                <p style="color:var(--text-muted);font-size:0.85rem;margin-bottom:16px;">
+                <p class="text-muted text-sm mb-16">
                     Scegli un provider per generare contenuti dall'editor. Serve una API key del provider scelto.
                 </p>
 
@@ -238,12 +238,12 @@ ob_start();
                         <label>API Key</label>
                         <input type="password" name="ai_api_key" class="form-input" value="<?= $aiKey ? '' : '' ?>" placeholder="<?= $aiKey ? 'Chiave gia configurata (lascia vuoto per mantenerla)' : 'Inserisci la tua API key' ?>">
                         <?php if ($aiKey): ?>
-                        <div class="form-hint" style="color:var(--success);">&#10003; API key configurata. Lascia vuoto per mantenerla, compila per cambiarla.</div>
+                        <div class="form-hint text-success">&#10003; API key configurata. Lascia vuoto per mantenerla, compila per cambiarla.</div>
                         <?php endif; ?>
                     </div>
 
                     <div class="form-group">
-                        <label>Modello <span style="font-weight:400;text-transform:none;letter-spacing:0;">(opzionale)</span></label>
+                        <label>Modello <span class="opt">(opzionale)</span></label>
                         <input type="text" name="ai_model" id="ai-model" class="form-input" value="<?= ocms_escape($aiModel) ?>" placeholder="">
                         <div class="form-hint" id="ai-model-hint">Lascia vuoto per usare il modello predefinito</div>
                     </div>
@@ -253,18 +253,18 @@ ob_start();
                 <div id="ai-style-fields" style="<?= $aiProvider==='none'?'display:none;':'' ?>">
                     <div class="form-group">
                         <label>Stile di scrittura</label>
-                        <textarea name="ai_instructions" class="form-textarea" rows="5" style="font-size:0.85rem;line-height:1.6;"
+                        <textarea name="ai_instructions" class="form-textarea text-sm" rows="5"
                                   placeholder="Descrivi come l'AI deve scrivere i contenuti..."><?= ocms_escape($aiInstructions ?: $defaultInstructions) ?></textarea>
                         <div class="form-hint">Queste istruzioni vengono inviate all'AI ogni volta che usi "Genera" nell'editor.</div>
                     </div>
 
                     <!-- Test connessione -->
-                    <div class="form-group" style="margin-bottom:0;">
-                        <div style="display:flex;gap:10px;align-items:center;">
+                    <div class="form-group mb-0">
+                        <div class="flex-row">
                             <button type="button" id="btn-test-ai" class="btn btn-secondary btn-sm" onclick="testAiConnection()">Testa connessione AI</button>
-                            <span id="ai-test-result" style="font-size:0.85rem;"></span>
+                            <span class="text-sm" id="ai-test-result"></span>
                         </div>
-                        <div class="form-hint" style="margin-top:6px;">Salva prima le impostazioni, poi testa. Invia un prompt di prova per verificare che tutto funzioni.</div>
+                        <div class="form-hint">Salva prima le impostazioni, poi testa. Invia un prompt di prova per verificare che tutto funzioni.</div>
                     </div>
                 </div>
             </div>
@@ -322,22 +322,22 @@ ob_start();
             </script>
 
             <div class="card">
-                <h3 style="font-size:1rem;font-weight:700;margin-bottom:16px;">Code Injection</h3>
+                <h3 class="card-title">Code Injection</h3>
                 <div class="form-group">
                     <label>Script Head (analytics, meta, ecc.)</label>
-                    <textarea name="head_scripts" class="form-textarea" rows="3" style="font-family:monospace;font-size:0.85rem;"
+                    <textarea name="head_scripts" class="form-textarea mono" rows="3"
                               placeholder="<script>...</script>"><?= ocms_escape($seo['head_scripts'] ?? '') ?></textarea>
                 </div>
-                <div class="form-group" style="margin-bottom:0;">
+                <div class="form-group mb-0">
                     <label>Script Body (chat widget, ecc.)</label>
-                    <textarea name="body_scripts" class="form-textarea" rows="3" style="font-family:monospace;font-size:0.85rem;"
+                    <textarea name="body_scripts" class="form-textarea mono" rows="3"
                               placeholder="<script>...</script>"><?= ocms_escape($seo['body_scripts'] ?? '') ?></textarea>
                 </div>
             </div>
         </div>
     </div>
 
-    <div style="margin-top:24px;">
+    <div class="mt-24">
         <button type="submit" class="btn btn-primary">Salva Impostazioni</button>
     </div>
 </form>

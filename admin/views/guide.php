@@ -74,13 +74,13 @@ ob_start();
 
     <h3>Struttura della Dashboard</h3>
     <ul>
-        <li><strong>Sidebar sinistra</strong>: navigazione a tutte le sezioni</li>
-        <li><strong>Barra ricerca</strong> (in alto nella sidebar): cerca ovunque, premi Invio per la ricerca avanzata</li>
+        <li><strong>Sidebar sinistra</strong>: navigazione a tutte le sezioni, con gruppi richiudibili; il pulsante in alto la riduce a sole icone</li>
+        <li><strong>Barra di ricerca</strong> (in alto, oppure <kbd>Ctrl</kbd>+<kbd>K</kbd>): vai a una sezione, lancia un'azione o cerca nei contenuti</li>
         <li><strong>Statistiche</strong>: conteggi pagine, articoli, utenti, media</li>
         <li><strong>Azioni rapide</strong>: link diretti alle azioni più comuni</li>
     </ul>
 
-    <div class="tip"><strong>Suggerimento:</strong> Puoi cercare qualsiasi cosa dalla barra di ricerca nella sidebar — pagine, articoli, utenti, media, form, menu.</div>
+    <div class="tip"><strong>Suggerimento:</strong> Puoi cercare qualsiasi cosa dalla barra di ricerca in alto (<kbd>Ctrl</kbd>+<kbd>K</kbd>) — pagine, articoli, lezioni, utenti, media.</div>
 </div>
 
 <!-- 2. PAGINE -->
@@ -289,11 +289,11 @@ ob_start();
 <div class="guide-section" id="search">
     <h2>10. Ricerca</h2>
 
-    <h3>Ricerca Admin (sidebar)</h3>
-    <p>Digita nella barra in alto nella sidebar per cercare istantaneamente in tutto il CMS. Premi <strong>Invio</strong> per la ricerca avanzata.</p>
+    <h3>Ricerca e comandi (Ctrl+K)</h3>
+    <p>Clicca la barra in alto o premi <kbd>Ctrl</kbd>+<kbd>K</kbd> (<kbd>⌘</kbd>+<kbd>K</kbd> su Mac): scrivi anche solo alcune lettere per andare a una sezione, creare un contenuto o cercare in tutto il CMS. Frecce per scegliere, <strong>Invio</strong> per aprire, <strong>Esc</strong> per chiudere.</p>
 
     <h3>Ricerca Avanzata</h3>
-    <p>Accessibile da <strong>sidebar → Invio</strong> o <strong>link "Ricerca avanzata"</strong> nei risultati rapidi.</p>
+    <p>Accessibile dalla voce <strong>"Cerca in tutti i contenuti"</strong> della ricerca rapida.</p>
     <ul>
         <li><strong>Filtri per tipo</strong>: pagine, articoli, categorie, utenti, media, form, menu</li>
         <li><strong>Filtri per stato</strong>: pubblicato / bozza</li>

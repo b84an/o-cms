@@ -36,7 +36,7 @@ ob_start();
 
 <?php $headExtra = ob_get_clean(); ob_start(); ?>
 
-<form method="POST" action="<?= ocms_base_url() ?>/admin/pages/save" id="page-form">
+<form method="POST" action="<?= ocms_base_url() ?>/admin/pages/save" id="page-form" data-ocms-autosave="page" data-updated-at="<?= ocms_escape($page['updated_at'] ?? '') ?>">
     <?= ocms_csrf_field() ?>
     <input type="hidden" name="id" value="<?= ocms_escape($page['id']) ?>">
     <input type="hidden" name="original_slug" value="<?= ocms_escape($page['slug']) ?>">
@@ -44,7 +44,7 @@ ob_start();
 
     <div class="page-header">
         <h1><?= $isNew ? 'Nuova Pagina' : 'Modifica Pagina' ?></h1>
-        <div style="display:flex;gap:10px;">
+        <div class="btn-row">
             <a href="<?= ocms_base_url() ?>/admin/pages" class="btn btn-secondary">Annulla</a>
             <button type="submit" name="status" value="draft" class="btn btn-secondary">Salva Bozza</button>
             <button type="submit" name="status" value="published" class="btn btn-primary">Pubblica</button>
@@ -55,23 +55,21 @@ ob_start();
         <!-- COLONNA PRINCIPALE -->
         <div class="editor-main">
             <!-- Titolo -->
-            <div class="card" style="margin-bottom:20px;">
-                <div class="form-group" style="margin-bottom:0;">
-                    <input type="text" name="title" class="form-input" placeholder="Titolo della pagina"
+            <div class="card card-title-field mb-20">
+                <div class="form-group mb-0">
+                    <input type="text" name="title" class="form-input title-input" placeholder="Titolo della pagina"
                            value="<?= ocms_escape($page['title']) ?>"
-                           style="font-size:1.4rem;font-weight:700;padding:16px;background:transparent;border:none;"
-                           id="page-title" required>
+                           id="page-title" required aria-label="Titolo">
                 </div>
             </div>
 
             <!-- Editor WYSIWYG -->
             <div class="card">
-                <div class="form-group" style="margin-bottom:0;">
-                    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
-                        <label style="margin-bottom:0;">Contenuto</label>
+                <div class="form-group mb-0">
+                    <div class="label-row">
+                        <label>Contenuto</label>
                         <?php if ($_aiEnabled): ?>
-                        <button type="button" id="ai-btn" onclick="openAiModal()"
-                                style="display:inline-flex;align-items:center;gap:6px;padding:6px 14px;background:linear-gradient(135deg,#8b5cf6,#6366f1);color:#fff;border:none;border-radius:8px;font-size:0.8rem;font-weight:600;cursor:pointer;font-family:inherit;transition:transform .15s,box-shadow .15s;">
+                        <button type="button" id="ai-btn" onclick="openAiModal()" class="btn-ai">
                             <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a4 4 0 0 1 4 4c0 1.95-1.4 3.58-3.25 3.93L12 22"/><path d="M8 6a4 4 0 0 1 8 0"/><path d="M17 12.5c1.77.77 3 2.53 3 4.5a5 5 0 0 1-10 0"/><path d="M4 17a5 5 0 0 1 3-4.5"/></svg>
                             Chiedi a <?= $_aiName ?>
                         </button>
@@ -91,42 +89,42 @@ ob_start();
             </div>
 
             <!-- Modale AI -->
-            <div id="ai-modal" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.7);backdrop-filter:blur(4px);align-items:center;justify-content:center;">
-                <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:16px;padding:28px;width:90%;max-width:580px;box-shadow:0 20px 60px rgba(0,0,0,0.5);">
-                    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;">
-                        <h3 style="font-size:1.1rem;font-weight:700;display:flex;align-items:center;gap:8px;">
+            <div id="ai-modal" class="modal-backdrop" style="display:none;">
+                <div class="modal-box" role="dialog" aria-modal="true" aria-labelledby="ai-modal-title">
+                    <div class="modal-head">
+                        <h3 id="ai-modal-title">
                             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#8b5cf6" stroke-width="2"><path d="M12 2a4 4 0 0 1 4 4c0 1.95-1.4 3.58-3.25 3.93L12 22"/><path d="M8 6a4 4 0 0 1 8 0"/><path d="M17 12.5c1.77.77 3 2.53 3 4.5a5 5 0 0 1-10 0"/><path d="M4 17a5 5 0 0 1 3-4.5"/></svg>
                             Chiedi a <?= $_aiName ?>
                         </h3>
-                        <button type="button" onclick="closeAiModal()" style="background:none;border:none;color:var(--text-muted);font-size:20px;cursor:pointer;">&times;</button>
+                        <button type="button" onclick="closeAiModal()" class="modal-close" aria-label="Chiudi">&times;</button>
                     </div>
-                    <p style="color:var(--text-muted);font-size:0.85rem;margin-bottom:16px;">
+                    <p class="text-muted text-sm mb-16">
                         Descrivi il contenuto che vuoi generare. <?= $_aiName ?> scriverà in formato HTML pronto per l'editor.
                     </p>
                     <textarea id="ai-prompt" class="form-textarea" rows="4" placeholder="Es: Scrivi una pagina chi siamo per un'azienda di design, con mission e valori..."
-                              style="min-height:100px;margin-bottom:16px;"></textarea>
-                    <div style="display:flex;align-items:center;gap:8px;">
-                        <select id="ai-mode" class="form-select" style="width:auto;padding:8px 36px 8px 12px;font-size:0.85rem;">
+                              aria-label="Descrizione per l'IA"></textarea>
+                    <div class="modal-actions mt-16">
+                        <select id="ai-mode" class="form-select select-sm" aria-label="Modalità">
                             <option value="write">Scrivi contenuto completo</option>
                             <option value="expand">Espandi/migliora il contenuto attuale</option>
                             <option value="rewrite">Riscrivi il contenuto attuale</option>
                         </select>
-                        <span style="flex:1;"></span>
+                        <span class="grow"></span>
                         <button type="button" onclick="closeAiModal()" class="btn btn-secondary btn-sm">Annulla</button>
-                        <button type="button" id="ai-submit" onclick="generateAi()" class="btn btn-sm" style="background:linear-gradient(135deg,#8b5cf6,#6366f1);color:#fff;border:none;">Genera</button>
+                        <button type="button" id="ai-submit" onclick="generateAi()" class="btn btn-sm btn-ai">Genera</button>
                     </div>
-                    <div id="ai-loading" style="display:none;margin-top:16px;text-align:center;padding:20px;">
-                        <div style="display:inline-block;width:24px;height:24px;border:3px solid var(--border);border-top-color:var(--primary-light);border-radius:50%;animation:spin 0.8s linear infinite;"></div>
-                        <p style="color:var(--text-muted);font-size:0.85rem;margin-top:10px;"><?= $_aiName ?> sta scrivendo...</p>
+                    <div id="ai-loading" class="ai-loading" style="display:none;">
+                        <div class="spinner"></div>
+                        <p class="text-muted text-sm mt-8"><?= $_aiName ?> sta scrivendo...</p>
                     </div>
-                    <div id="ai-error" style="display:none;margin-top:12px;color:#ef4444;font-size:0.85rem;"></div>
+                    <div id="ai-error" class="text-error text-sm mt-12" style="display:none;" role="alert"></div>
                     <style>@keyframes spin { to { transform: rotate(360deg); } }</style>
                 </div>
             </div>
 
             <!-- SEO -->
-            <div class="card" style="margin-top:20px;">
-                <h3 style="font-size:1rem;font-weight:700;margin-bottom:16px;">SEO</h3>
+            <div class="card mt-20">
+                <h3 class="card-title">SEO</h3>
 
                 <div class="form-group">
                     <label for="meta_title">Meta Title</label>
@@ -138,9 +136,8 @@ ob_start();
 
                 <div class="form-group">
                     <label for="meta_description">Meta Description</label>
-                    <textarea name="meta_description" id="meta_description" class="form-textarea"
-                              placeholder="Descrizione per i motori di ricerca" rows="2"
-                              style="min-height:60px;"><?= ocms_escape($page['meta']['description'] ?? '') ?></textarea>
+                    <textarea name="meta_description" id="meta_description" class="form-textarea textarea-short"
+                              placeholder="Descrizione per i motori di ricerca" rows="2"><?= ocms_escape($page['meta']['description'] ?? '') ?></textarea>
                 </div>
 
                 <input type="hidden" name="og_image" value="<?= ocms_escape($page['meta']['og_image'] ?? '') ?>">
@@ -158,7 +155,7 @@ ob_start();
         <div class="editor-sidebar">
             <!-- Pubblicazione -->
             <div class="card">
-                <h3 style="font-size:1rem;font-weight:700;margin-bottom:16px;">Pubblicazione</h3>
+                <h3 class="card-title">Pubblicazione</h3>
 
                 <div class="form-group">
                     <label>Stato attuale</label>
@@ -170,7 +167,7 @@ ob_start();
                 <?php if ($page['updated_at']): ?>
                 <div class="form-group">
                     <label>Ultimo aggiornamento</label>
-                    <span style="font-size:0.85rem;color:var(--text-muted);">
+                    <span class="text-sm text-muted">
                         <?= ocms_format_date($page['updated_at']) ?>
                     </span>
                 </div>
@@ -178,7 +175,7 @@ ob_start();
 
                 <?php if (!$isNew && $page['slug']): ?>
                 <a href="<?= ocms_base_url() ?>/<?= ocms_escape($page['slug']) ?>" target="_blank"
-                   class="btn btn-secondary btn-sm" style="width:100%;justify-content:center;">
+                   class="btn btn-secondary btn-sm btn-block">
                     Vedi pagina
                 </a>
                 <?php endif; ?>
@@ -186,8 +183,8 @@ ob_start();
 
             <!-- Slug -->
             <div class="card">
-                <h3 style="font-size:1rem;font-weight:700;margin-bottom:16px;">URL</h3>
-                <div class="form-group" style="margin-bottom:0;">
+                <h3 class="card-title">URL</h3>
+                <div class="form-group mb-0">
                     <label for="page-slug">Slug</label>
                     <input type="text" name="slug" id="page-slug" class="form-input"
                            placeholder="viene-generato-dal-titolo"
@@ -198,7 +195,7 @@ ob_start();
 
             <!-- Layout -->
             <div class="card">
-                <h3 style="font-size:1rem;font-weight:700;margin-bottom:16px;">Layout</h3>
+                <h3 class="card-title">Layout</h3>
                 <div class="form-group">
                     <label>Layout Builder</label>
                     <select name="layout" class="form-select">
@@ -215,10 +212,10 @@ ob_start();
                     <div class="form-hint">
                         Se scegli un layout, la pagina userà il Layout Builder.<br>
                         "Base" = header/footer globali + il tuo contenuto.<br>
-                        <a href="<?= ocms_base_url() ?>/admin/layouts" style="font-size:0.75rem;">Gestisci Layout →</a>
+                        <a href="<?= ocms_base_url() ?>/admin/layouts">Gestisci i layout</a>
                     </div>
                 </div>
-                <div class="form-group" style="margin-bottom:0;">
+                <div class="form-group mb-0">
                     <label>Template PHP (fallback)</label>
                     <select name="template" class="form-select">
                         <option value="page" <?= $page['template'] === 'page' ? 'selected' : '' ?>>Pagina Standard</option>
@@ -231,13 +228,13 @@ ob_start();
 
             <!-- Ordine -->
             <div class="card">
-                <h3 style="font-size:1rem;font-weight:700;margin-bottom:16px;">Ordinamento</h3>
-                <div class="form-group" style="margin-bottom:0;">
+                <h3 class="card-title">Ordinamento</h3>
+                <div class="form-group mb-0">
                     <label for="page-order">Ordine</label>
                     <input type="number" name="order" id="page-order" class="form-input"
                            value="<?= (int)$page['order'] ?>" min="0">
                 </div>
-                <div class="form-group" style="margin-top:12px;margin-bottom:0;">
+                <div class="form-group mt-12 mb-0">
                     <label for="page-parent">Pagina Padre</label>
                     <input type="text" name="parent" id="page-parent" class="form-input"
                            placeholder="slug-pagina-padre"

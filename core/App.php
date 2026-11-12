@@ -1,35 +1,19 @@
 <?php
 /**
- * O-CMS — Application Bootstrap
+ * O-CMS — Bootstrap Applicazione
  *
- * Main engine of O-CMS, a flat-file CMS powered by JSON storage.
- * Handles routing, authentication, content management, media uploads,
- * AI content generation, analytics, and all frontend/admin operations.
- *
- * @package O-CMS
- * @version 1.0.0
- */
-
-/**
- * Core application class (singleton).
- *
- * Wires together Router, JsonStorage, Auth, and ExtensionManager,
- * then registers every frontend and admin route.
+ * Inizializza tutti i componenti del CMS.
  */
 class App {
     public Router $router;
     public JsonStorage $storage;
     public Auth $auth;
     public ExtensionManager $extensions;
+    public Updater $updater;
     public array $config;
 
     private static ?App $instance = null;
 
-    /**
-     * Return the singleton App instance.
-     *
-     * @return App
-     */
     public static function getInstance(): App {
         if (self::$instance === null) {
             self::$instance = new self();
@@ -37,12 +21,8 @@ class App {
         return self::$instance;
     }
 
-    /**
-     * Private constructor (singleton pattern).
-     * Loads all core modules and initializes components.
-     */
     private function __construct() {
-        // Load helpers
+        // Carica helpers
         require_once __DIR__ . '/Helpers.php';
         require_once __DIR__ . '/JsonStorage.php';
         require_once __DIR__ . '/Session.php';
@@ -52,8 +32,9 @@ class App {
         require_once __DIR__ . '/ExtensionManager.php';
         require_once __DIR__ . '/LayoutRenderer.php';
         require_once __DIR__ . '/SearchEngine.php';
+        require_once __DIR__ . '/Updater.php';
 
-        // Initialize core components
+        // Inizializza componenti
         $this->storage = new JsonStorage();
         $this->config = $this->storage->readFile('config.json') ?? [];
 
@@ -64,17 +45,32 @@ class App {
         // Extension Manager
         $this->extensions = new ExtensionManager($this);
 
-        // Compute base path from the current URL
+        // Updater (controllo release su GitHub)
+        $this->updater = new Updater();
+
+        // Calcola base path dall'URL
         $basePath = rtrim(dirname($_SERVER['SCRIPT_NAME']), '/');
+        // Le API REST rispondono anche su /api/... (come da documentazione), non solo
+        // su /admin/api/...: il .htaccess manda /api/* all'entry point admin
+        if (str_ends_with($basePath, '/admin') || $basePath === '/admin') {
+            $siteBase = substr($basePath, 0, -strlen('/admin'));
+            $reqPath = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?: '/';
+            if (str_starts_with($reqPath, $siteBase . '/api/')) {
+                $basePath = $siteBase;
+            }
+        }
         $this->router = new Router($basePath);
     }
 
     /**
-     * Boot and dispatch the frontend application.
-     *
-     * @return void
+     * Avvia l'applicazione frontend
      */
     public function run(): void {
+        // Modalità manutenzione: il pubblico vede una pagina 503, lo staff loggato naviga normalmente
+        if (!empty($this->config['maintenance_mode']) && !$this->auth->hasRole('editor')) {
+            $this->renderMaintenance();
+            return;
+        }
         $this->setupFrontendRoutes();
         $this->extensions->bootAll();
         Hooks::trigger('app.before_dispatch', $this);
@@ -82,16 +78,13 @@ class App {
     }
 
     /**
-     * Boot and dispatch the admin application.
-     *
-     * @return void
+     * Avvia l'applicazione admin
      */
     public function runAdmin(): void {
         $this->setupAdminRoutes();
         $this->extensions->bootAll();
 
-        // Phone home: one-time anonymous installation notification.
-        // Sends only the domain name once. See README for details.
+        // Notifica di installazione una tantum (solo dominio, versione PHP e CMS)
         if (empty($this->config['installation_notified'])) {
             $this->sendInstallNotification();
         }
@@ -100,12 +93,8 @@ class App {
         $this->router->dispatch();
     }
 
-    // ─── FRONTEND ROUTES ───
-
     /**
-     * Register all frontend (public-facing) routes.
-     *
-     * @return void
+     * Rotte frontend
      */
     private function setupFrontendRoutes(): void {
         $app = $this;
@@ -115,10 +104,10 @@ class App {
             ocms_track_visit('/', 'page');
             $page = $app->storage->find('pages', 'home');
 
-            // Featured articles for the homepage
+            // Articoli in evidenza per la homepage
             $featured = $app->storage->findAll('articles', function ($a) {
                 if ($a['status'] !== 'published') return false;
-                if (!empty($a['publish_at']) && $a['publish_at'] > date('c')) return false;
+                if (ocms_is_future($a['publish_at'] ?? '')) return false;
                 return !empty($a['featured']);
             }, 'updated_at', 'desc');
 
@@ -129,7 +118,7 @@ class App {
             }
         });
 
-        // Blog listing (registered BEFORE /{slug} to avoid route conflict)
+        // Blog (PRIMA di /{slug} per evitare conflitto)
         $this->router->get('/blog', function () use ($app) {
             ocms_track_visit('/blog', 'page');
 
@@ -140,7 +129,7 @@ class App {
 
             $articles = $app->storage->findAll('articles', function ($a) use ($filterCat) {
                 if ($a['status'] !== 'published') return false;
-                if (!empty($a['publish_at']) && $a['publish_at'] > date('c')) return false;
+                if (ocms_is_future($a['publish_at'] ?? '')) return false;
                 if ($filterCat && ($a['category'] ?? '') !== $filterCat) return false;
                 return true;
             }, $sortField, $sortDir);
@@ -149,7 +138,7 @@ class App {
             $app->render('blog', ['articles' => $articles, 'categories' => $categories, 'sort' => $sort, 'filterCat' => $filterCat]);
         });
 
-        // Single article
+        // Articolo singolo
         $this->router->get('/blog/{slug}', function ($params) use ($app) {
             $article = $app->storage->find('articles', $params['slug']);
             if (!$article || $article['status'] !== 'published') {
@@ -157,27 +146,33 @@ class App {
                 $app->render('404');
                 return;
             }
-            // Scheduled publishing: do not show future articles
-            if (!empty($article['publish_at']) && $article['publish_at'] > date('c')) {
+            // Pubblicazione programmata: non mostrare articoli futuri
+            if (ocms_is_future($article['publish_at'] ?? '')) {
                 http_response_code(404);
                 $app->render('404');
                 return;
             }
             ocms_track_visit('/blog/' . $params['slug'], 'article');
 
-            // Increment article view counter
-            $article['views'] = ($article['views'] ?? 0) + 1;
-            $app->storage->save('articles', $article['slug'], $article);
+            // Incrementa contatore visite articolo
+            // Contatore visite: rilettura e scrittura sotto lock, così una visita
+            // non può sovrascrivere un salvataggio fatto nel frattempo dall'admin
+            $viewsSaved = $app->storage->update('articles', $article['slug'], function ($d) {
+                if (!$d) return null;
+                $d['views'] = ($d['views'] ?? 0) + 1;
+                return $d;
+            });
+            $article['views'] = $viewsSaved['views'] ?? ($article['views'] ?? 0) + 1;
 
-            // Load approved comments
+            // Carica commenti approvati
             $comments = $app->storage->findAll('comments', function ($c) use ($params) {
                 return ($c['article_slug'] ?? '') === $params['slug'] && ($c['status'] ?? '') === 'approved';
             }, 'created_at', 'asc');
 
-            // All published articles for prev/next navigation and related
+            // Tutti gli articoli pubblicati per prev/next e correlati
             $allArticles = $app->storage->findAll('articles', function ($a) {
                 if ($a['status'] !== 'published') return false;
-                if (!empty($a['publish_at']) && $a['publish_at'] > date('c')) return false;
+                if (ocms_is_future($a['publish_at'] ?? '')) return false;
                 return true;
             }, 'created_at', 'desc');
 
@@ -191,7 +186,7 @@ class App {
                 $prevArticle = $a;
             }
 
-            // Related articles (same category or shared tags, max 3)
+            // Articoli correlati (stessa categoria o tag in comune, max 3)
             $related = [];
             $artCategory = $article['category'] ?? '';
             $artTags = $article['tags'] ?? [];
@@ -214,7 +209,7 @@ class App {
             ]);
         });
 
-        // Submit comment
+        // Invio commento
         $this->router->post('/blog/{slug}/comment', function ($params) use ($app) {
             if (!ocms_csrf_verify()) {
                 ocms_flash_set('error', 'Token di sicurezza non valido');
@@ -266,7 +261,7 @@ class App {
 
             $app->storage->save('comments', $commentId, $comment);
 
-            // Email notification to the article author (if configured)
+            // Notifica email all'autore dell'articolo (se configurato)
             $config = ocms_config();
             $notifyEmail = $config['smtp']['from_email'] ?? '';
             if ($notifyEmail) {
@@ -282,9 +277,14 @@ class App {
             ocms_redirect(ocms_base_url() . '/blog/' . $params['slug'] . '#comments');
         });
 
-        // Frontend search
+        // Ricerca frontend
         $this->router->get('/search', function () use ($app) {
-            $q = trim($_GET['q'] ?? '');
+            $q = trim(mb_substr((string)($_GET['q'] ?? ''), 0, 200));
+            // La ricerca legge tutti i contenuti: limite per IP contro l'abuso
+            if ($q !== '' && !ocms_rate_limit_ip('search', 60, 60)) {
+                http_response_code(429);
+                $q = '';
+            }
             $engine = new SearchEngine($app);
             $result = $q ? $engine->search($q, [
                 'types' => ['page', 'article', 'lesson'],
@@ -305,30 +305,35 @@ class App {
             $form = $app->storage->find('forms', $params['slug']);
             if (!$form) { http_response_code(404); echo 'Form non trovato'; return; }
 
-            // Verify captcha
+            // Verifica captcha
             $captchaKey = 'form_captcha_' . $params['slug'];
             $captchaExpected = $_SESSION[$captchaKey] ?? '';
             $captchaInput = trim($_POST['_captcha'] ?? '');
-            if ($captchaExpected && $captchaInput !== $captchaExpected) {
-                ocms_flash_set('error', 'Risposta al captcha errata. Riprova.');
+            // Il captcha è sempre richiesto (lo shortcode lo genera sempre): prima,
+            // senza captcha in sessione, il controllo veniva saltato del tutto
+            if ($captchaExpected === '' || !hash_equals($captchaExpected, $captchaInput)) {
+                ocms_flash_set('error', $captchaExpected === '' ? 'Sessione scaduta: ricarica la pagina e riprova.' : 'Risposta al captcha errata. Riprova.');
                 $referer = $_SERVER['HTTP_REFERER'] ?? ocms_base_url() . '/';
                 ocms_redirect($referer);
                 return;
             }
             unset($_SESSION[$captchaKey]);
 
-            // Collect submitted data
+            // Raccogli dati
             $submission = ['id' => ocms_uuid(), 'submitted_at' => ocms_now(), 'data' => []];
             foreach ($form['fields'] as $field) {
                 $key = $field['name'] ?? '';
                 $submission['data'][$key] = trim($_POST[$key] ?? '');
             }
 
-            $form['submissions'] = $form['submissions'] ?? [];
-            $form['submissions'][] = $submission;
-            $app->storage->save('forms', $params['slug'], $form);
+            $app->storage->update('forms', $params['slug'], function ($d) use ($submission) {
+                if (!$d) return null;
+                $d['submissions'] = $d['submissions'] ?? [];
+                $d['submissions'][] = $submission;
+                return $d;
+            });
 
-            // Email notification via SMTP
+            // Email notifica via SMTP
             $email = $form['settings']['notify_email'] ?? '';
             if ($email && filter_var($email, FILTER_VALIDATE_EMAIL)) {
                 $siteName = ocms_escape($app->config['site_name'] ?? 'O-CMS');
@@ -347,7 +352,7 @@ class App {
             ocms_redirect($referer);
         });
 
-        // ─── CONTACT FORM (AJAX with SMTP) ───
+        // ─── CONTATTO (form AJAX con SMTP) ───
         $this->router->post('/contatto/invia', function () use ($app) {
             header('Content-Type: application/json');
 
@@ -370,10 +375,33 @@ class App {
                 return;
             }
 
-            // Simple rate limiting: max 3 submissions per session
+            // Solo richieste partite da questo sito (il form non ha token CSRF
+            // per restare compatibile con le pagine contatto già pubblicate)
+            if (!ocms_same_origin_request()) {
+                http_response_code(403);
+                echo json_encode(['success' => false, 'error' => 'Richiesta non valida.']);
+                return;
+            }
+            // Honeypot facoltativo
+            if (!empty($input['website'])) {
+                echo json_encode(['success' => true]);
+                return;
+            }
+            if (mb_strlen($name) > 120 || mb_strlen($email) > 200 || mb_strlen($message) > 10000) {
+                echo json_encode(['success' => false, 'error' => 'Messaggio troppo lungo.']);
+                return;
+            }
+
+            // Rate limiting: 3 invii per sessione e 10 all'ora per IP
             $_SESSION['contact_count'] = ($_SESSION['contact_count'] ?? 0) + 1;
-            if ($_SESSION['contact_count'] > 3) {
+            if ($_SESSION['contact_count'] > 3 || !ocms_rate_limit_ip('contact', 10, 3600)) {
                 echo json_encode(['success' => false, 'error' => 'Troppi messaggi inviati. Riprova più tardi.']);
+                return;
+            }
+
+            $recipient = trim((string)($app->config['admin_email'] ?? ''));
+            if (!filter_var($recipient, FILTER_VALIDATE_EMAIL)) {
+                echo json_encode(['success' => false, 'error' => 'Il sito non ha ancora un indirizzo email amministratore configurato.']);
                 return;
             }
 
@@ -393,7 +421,7 @@ class App {
                 </div>
             </div>';
 
-            $sent = ocms_send_mail($this->config['admin_email'] ?? '', $subject, $htmlBody);
+            $sent = ocms_send_mail($recipient, $subject, $htmlBody, $email);
 
             if ($sent) {
                 echo json_encode(['success' => true]);
@@ -402,7 +430,7 @@ class App {
             }
         });
 
-        // ─── REGISTRATION ───
+        // ─── REGISTRAZIONE ───
 
         $this->router->get('/register', function () use ($app) {
             $config = $app->storage->readFile('config.json') ?? [];
@@ -439,7 +467,7 @@ class App {
                 return;
             }
 
-            // Verify captcha
+            // Verifica captcha
             if (!ocms_captcha_verify($_POST['captcha'] ?? '')) {
                 ocms_flash_set('error', 'Risposta captcha errata');
                 ocms_redirect(ocms_base_url() . '/register');
@@ -451,7 +479,7 @@ class App {
             $password = $_POST['password'] ?? '';
             $displayName = trim($_POST['display_name'] ?? $username);
 
-            // Validation
+            // Validazione
             if (!$username || !$email || !$password) {
                 ocms_flash_set('error', 'Tutti i campi sono obbligatori');
                 ocms_redirect(ocms_base_url() . '/register');
@@ -467,8 +495,8 @@ class App {
                 ocms_redirect(ocms_base_url() . '/register');
                 return;
             }
-            if (strlen($password) < 6) {
-                ocms_flash_set('error', 'La password deve avere almeno 6 caratteri');
+            if (strlen($password) < 8) {
+                ocms_flash_set('error', 'La password deve avere almeno 8 caratteri');
                 ocms_redirect(ocms_base_url() . '/register');
                 return;
             }
@@ -486,7 +514,7 @@ class App {
                 return;
             }
 
-            // Send activation email
+            // Invia email di attivazione
             $siteUrl = $config['site_url'] ?? '';
             $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
             $host = $_SERVER['HTTP_HOST'] ?? 'localhost';
@@ -516,7 +544,7 @@ HTML;
             ocms_redirect(ocms_base_url() . '/register');
         });
 
-        // Account activation
+        // Attivazione account
         $this->router->get('/activate/{token}', function ($params) use ($app) {
             $token = $params['token'];
             if ($app->auth->activate($token)) {
@@ -527,7 +555,7 @@ HTML;
             ocms_redirect(ocms_base_url() . '/admin/login');
         });
 
-        // Lessons listing
+        // Lezioni (lista)
         $this->router->get('/lezioni', function () use ($app) {
             ocms_track_visit('/lezioni', 'page');
             $lessons = $app->storage->findAll('lessons', function ($l) {
@@ -536,7 +564,7 @@ HTML;
             $app->render('lessons', ['lessons' => $lessons]);
         });
 
-        // Single lesson
+        // Lezione singola
         $this->router->get('/lezione/{slug}', function ($params) use ($app) {
             $lesson = $app->storage->find('lessons', $params['slug']);
             if (!$lesson || $lesson['status'] !== 'published') {
@@ -546,10 +574,16 @@ HTML;
             }
             ocms_track_visit('/lezione/' . $params['slug'], 'lesson');
 
-            $lesson['views'] = ($lesson['views'] ?? 0) + 1;
-            $app->storage->save('lessons', $lesson['slug'], $lesson);
+            // Contatore visite: rilettura e scrittura sotto lock, così una visita
+            // non può sovrascrivere un salvataggio fatto nel frattempo dall'admin
+            $viewsSaved = $app->storage->update('lessons', $lesson['slug'], function ($d) {
+                if (!$d) return null;
+                $d['views'] = ($d['views'] ?? 0) + 1;
+                return $d;
+            });
+            $lesson['views'] = $viewsSaved['views'] ?? ($lesson['views'] ?? 0) + 1;
 
-            // Scan lesson files
+            // Scansiona i file della lezione
             $dir = ocms_base_path() . '/uploads/lezioni/' . $lesson['slug'];
             $files = [];
             if (is_dir($dir)) {
@@ -574,13 +608,13 @@ HTML;
                 }
             }
 
-            // Group files by basename
+            // Raggruppa per basename
             $groups = [];
             foreach ($files as $f) {
                 $groups[$f['basename']][] = $f;
             }
 
-            // Load descriptions from matching .txt files
+            // Carica descrizioni da file .txt omonimi
             $groupDescs = [];
             foreach ($groups as $basename => $members) {
                 $txtFile = $dir . '/' . $basename . '.txt';
@@ -589,7 +623,7 @@ HTML;
                 }
             }
 
-            // Sort: main file first, then alphabetical
+            // Ordina: main first, poi alfabetico
             $mainBasename = pathinfo($lesson['main_file'] ?? '', PATHINFO_FILENAME);
             uksort($groups, function ($a, $b) use ($mainBasename) {
                 if ($a === $mainBasename) return -1;
@@ -606,7 +640,7 @@ HTML;
             ]);
         });
 
-        // ─── GALLERIES (frontend) ───
+        // ─── GALLERIE (frontend) ───
 
         $this->router->get('/gallerie', function () use ($app) {
             ocms_track_visit('/gallerie', 'page');
@@ -645,7 +679,7 @@ HTML;
 
         // ─── QUIZ (frontend) ───
 
-        // List public quizzes
+        // Lista quiz pubblici
         $this->router->get('/quiz', function () use ($app) {
             ocms_track_visit('/quiz', 'page');
             $quizzes = $app->storage->findAll('quizzes', function ($q) {
@@ -654,7 +688,7 @@ HTML;
             $app->render('quizzes', ['quizzes' => $quizzes]);
         });
 
-        // Single quiz
+        // Quiz singolo
         $this->router->get('/quiz/{slug}', function ($params) use ($app) {
             $quiz = $app->storage->find('quizzes', $params['slug']);
             if (!$quiz || $quiz['status'] !== 'published') {
@@ -663,7 +697,7 @@ HTML;
                 return;
             }
 
-            // If authentication required and no access code, check login
+            // Se richiede autenticazione e non c'è codice accesso, verifica login
             $hasAccessCode = !empty($quiz['settings']['access_code']);
             if (!empty($quiz['settings']['require_auth']) && !$hasAccessCode && !$app->auth->check()) {
                 ocms_flash_set('error', 'Devi effettuare il login per accedere a questo quiz.');
@@ -671,7 +705,16 @@ HTML;
                 return;
             }
 
-            // Is quiz active?
+            // Se c'è un codice di accesso, richiedilo (lo staff autenticato lo salta)
+            if ($hasAccessCode && !$app->auth->check()) {
+                $verified = $_SESSION['quiz_code_ok'][$params['slug']] ?? false;
+                if (!$verified) {
+                    $app->render('quiz-code', ['quiz' => $quiz]);
+                    return;
+                }
+            }
+
+            // Quiz attivo?
             $quizActive = $quiz['settings']['active'] ?? true;
 
             ocms_track_visit('/quiz/' . $params['slug'], 'quiz');
@@ -679,7 +722,57 @@ HTML;
             $app->render('quiz', ['quiz' => $quiz, 'loggedUser' => $loggedUser, 'quizActive' => $quizActive]);
         });
 
-        // Check quiz email (AJAX)
+        // Verifica codice di accesso quiz
+        $this->router->post('/quiz/{slug}/verify-code', function ($params) use ($app) {
+            $quiz = $app->storage->find('quizzes', $params['slug']);
+            if (!$quiz || $quiz['status'] !== 'published') {
+                http_response_code(404);
+                $app->render('404');
+                return;
+            }
+
+            $quizUrl = ocms_base_url() . '/quiz/' . $params['slug'];
+
+            if (empty($_SESSION['_csrf_token']) || empty($_POST['_csrf_token'])
+                || !hash_equals($_SESSION['_csrf_token'], (string)$_POST['_csrf_token'])) {
+                ocms_flash_set('error', 'Token di sicurezza non valido. Riprova.');
+                ocms_redirect($quizUrl);
+                return;
+            }
+
+            $expected = (string)($quiz['settings']['access_code'] ?? '');
+            $submitted = trim((string)($_POST['access_code'] ?? ''));
+
+            // Limite ai tentativi sbagliati: 8 per sessione e 60 per IP ogni 10 minuti
+            // (largo perché un'intera classe esce con lo stesso IP)
+            // Limite ai tentativi sbagliati: 8 per sessione e 300 per IP ogni 10 minuti
+            // (largo: un'intera classe esce con lo stesso IP e chi sbaglia una cifra
+            // non deve bloccare i compagni).
+            $rlKey = 'quizcode_' . $params['slug'];
+            $sessFails = array_filter($_SESSION['_quizcode_fail'][$params['slug']] ?? [], fn($ts) => $ts > time() - 600);
+            // Il limite per IP va controllato PRIMA del confronto, altrimenti basterebbe
+            // aprire una sessione nuova ogni 8 tentativi. 300 errori in 10 minuti per IP
+            // restano ben oltre quelli di una classe che sbaglia a digitare.
+            if (count($sessFails) >= 8 || ocms_rate_limited_ip($rlKey, 300, 600)) {
+                ocms_flash_set('error', 'Troppi tentativi sbagliati. Riprova tra qualche minuto.');
+                ocms_redirect($quizUrl);
+                return;
+            }
+
+            if ($expected !== '' && hash_equals($expected, $submitted)) {
+                $_SESSION['quiz_code_ok'][$params['slug']] = true;
+                ocms_redirect($quizUrl);
+                return;
+            }
+
+            $sessFails[] = time();
+            $_SESSION['_quizcode_fail'][$params['slug']] = array_values($sessFails);
+            ocms_rate_limit_ip($rlKey, 300, 600);
+            ocms_flash_set('error', 'Codice di accesso errato.');
+            ocms_redirect($quizUrl);
+        });
+
+        // Verifica email quiz (AJAX)
         $this->router->post('/quiz/{slug}/check-email', function ($params) use ($app) {
             header('Content-Type: application/json');
             $input = json_decode(file_get_contents('php://input'), true);
@@ -710,21 +803,48 @@ HTML;
                 return;
             }
 
-            // Verify CSRF token
-            if (empty($_SESSION['_csrf_token']) || empty($input['_csrf_token']) || !hash_equals($_SESSION['_csrf_token'], $input['_csrf_token'])) {
+            // Verifica CSRF
+            if (!ocms_csrf_check($input['_csrf_token'] ?? null)) {
                 echo json_encode(['success' => false, 'error' => 'Token CSRF non valido']);
                 return;
             }
 
-            // Is quiz active?
+            // Quiz attivo?
             if (isset($quiz['settings']['active']) && !$quiz['settings']['active']) {
                 echo json_encode(['success' => false, 'error' => 'Quiz non attivo']);
                 return;
             }
 
-            $student = is_array($input['student'] ?? null) ? $input['student'] : [];
+            // Stessi cancelli della pagina del quiz: codice d'accesso o login
+            $hasAccessCode = !empty($quiz['settings']['access_code']);
+            if (!$app->auth->check()) {
+                if ($hasAccessCode && empty($_SESSION['quiz_code_ok'][$params['slug']])) {
+                    echo json_encode(['success' => false, 'error' => 'Codice di accesso mancante: ricarica la pagina e inseriscilo.']);
+                    return;
+                }
+                if (!$hasAccessCode && !empty($quiz['settings']['require_auth'])) {
+                    echo json_encode(['success' => false, 'error' => 'Devi effettuare il login.']);
+                    return;
+                }
+            }
 
-            // Check if email was already used for this quiz
+            $student = is_array($input['student'] ?? null) ? $input['student'] : [];
+            foreach (['name', 'class', 'email'] as $k) {
+                $student[$k] = is_scalar($student[$k] ?? null) ? mb_substr((string)$student[$k], 0, 200) : '';
+            }
+
+            // Risposte: solo valori semplici, al massimo una per domanda
+            $nQuestions = count($quiz['questions'] ?? []);
+            $answers = [];
+            foreach ((is_array($input['answers'] ?? null) ? $input['answers'] : []) as $k => $v) {
+                if (!is_int($k) && !ctype_digit((string)$k)) continue;
+                $k = (int)$k;
+                if ($k < 0 || $k >= $nQuestions) continue;
+                $answers[$k] = (is_string($v) || is_int($v) || is_float($v)) ? mb_substr((string)$v, 0, 2000) : null;
+            }
+            $input['answers'] = $answers;
+
+            // Verifica email già usata per questo quiz
             $studentEmail = strtolower(trim($student['email'] ?? ''));
             if ($studentEmail) {
                 $existing = $app->storage->findAll('quiz-results', function ($r) use ($params, $studentEmail) {
@@ -755,7 +875,7 @@ HTML;
                 'submitted_at' => ocms_now(),
             ];
 
-            // Calculate score server-side
+            // Verifica il punteggio server-side
             $questions = $quiz['questions'] ?? [];
             $correctCount = 0;
             $wrongCount = 0;
@@ -764,7 +884,7 @@ HTML;
                 $answer = $result['answers'][$qi] ?? null;
                 if ($answer === null || $answer === '') {
                     $skippedCount++;
-                } elseif ($answer === $question['correct']) {
+                } elseif (isset($question['correct']) && (string)$answer === (string)$question['correct']) {
                     $correctCount++;
                 } else {
                     $wrongCount++;
@@ -781,17 +901,165 @@ HTML;
             }
             $score = round($score, 1);
 
-            // Use server-side calculated values
+            // Usa i valori calcolati server-side
             $result['score'] = $score;
             $result['correct_count'] = $correctCount;
             $result['wrong_count'] = $wrongCount;
             $result['skipped_count'] = $skippedCount;
 
             $app->storage->save('quiz-results', $resultId, $result);
-            echo json_encode(['success' => true, 'id' => $resultId, 'score' => $score]);
+            echo json_encode([
+                'success' => true, 'id' => $resultId, 'score' => $score,
+                'correct_count' => $correctCount, 'wrong_count' => $wrongCount, 'skipped_count' => $skippedCount,
+            ]);
         });
 
-        // Single page (catch-all — MUST be the last frontend route)
+        // ─── FOGLIOFIRME (frontend) ───
+
+        $this->router->get('/firma/{slug}', function ($params) use ($app) {
+            $sheet = $app->storage->find('fogliofirme', $params['slug']);
+            if (!$sheet) { http_response_code(404); $app->render('404'); return; }
+            if (($sheet['status'] ?? 'open') !== 'open' || ocms_fogliofirme_is_expired($sheet)) {
+                $app->render('firma/closed', ['sheet' => $sheet]); return;
+            }
+            ocms_track_visit('/firma/' . $params['slug'], 'fogliofirme');
+            $needCode = !empty($sheet['access_code']);
+            $codeOk = !$needCode;
+            if ($needCode && isset($_GET['code']) && hash_equals((string)$sheet['access_code'], (string)$_GET['code'])) {
+                $codeOk = true;
+            }
+            $app->render('firma/form', ['sheet' => $sheet, 'needCode' => $needCode, 'codeOk' => $codeOk]);
+        });
+
+        $this->router->post('/firma/{slug}', function ($params) use ($app) {
+            $sheet = $app->storage->find('fogliofirme', $params['slug']);
+            if (!$sheet) { http_response_code(404); $app->render('404'); return; }
+            if (($sheet['status'] ?? 'open') !== 'open' || ocms_fogliofirme_is_expired($sheet)) {
+                $app->render('firma/closed', ['sheet' => $sheet]); return;
+            }
+            if (!ocms_csrf_verify()) {
+                ocms_flash_set('error', 'Sessione scaduta, riprova.');
+                ocms_redirect(ocms_base_url() . '/firma/' . $sheet['slug']);
+            }
+            // Honeypot
+            if (!empty($_POST['website'])) {
+                ocms_redirect(ocms_base_url() . '/firma/' . $sheet['slug'] . '/fatto');
+            }
+            // Tempo minimo compilazione (anti-bot)
+            $ts = (int)($_POST['_ts'] ?? 0);
+            if ($ts > 0 && (time() - $ts) < 2) {
+                ocms_flash_set('error', 'Compilazione troppo rapida, riprova.');
+                ocms_redirect(ocms_base_url() . '/firma/' . $sheet['slug']);
+            }
+            // Codice accesso
+            if (!empty($sheet['access_code'])) {
+                $submitted = trim((string)($_POST['access_code'] ?? ''));
+                if (!hash_equals((string)$sheet['access_code'], $submitted)) {
+                    ocms_flash_set('error', 'Codice di accesso errato.');
+                    ocms_redirect(ocms_base_url() . '/firma/' . $sheet['slug']);
+                }
+            }
+            $nome = trim((string)($_POST['nome'] ?? ''));
+            $cognome = trim((string)($_POST['cognome'] ?? ''));
+            $email = strtolower(trim((string)($_POST['email'] ?? '')));
+            if ($nome === '' || $cognome === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                ocms_flash_set('error', 'Compila nome, cognome e una email valida.');
+                ocms_redirect(ocms_base_url() . '/firma/' . $sheet['slug']);
+            }
+            // Anti-duplicato per email
+            $firme = $sheet['firme'] ?? [];
+            foreach ($firme as $f) {
+                if (strtolower(trim($f['email'] ?? '')) === $email) {
+                    ocms_flash_set('error', 'Questa email ha già firmato. Grazie comunque!');
+                    ocms_redirect(ocms_base_url() . '/firma/' . $sheet['slug'] . '/fatto?dup=1');
+                }
+            }
+            $firma = [
+                'id' => ocms_uuid(),
+                'nome' => $nome,
+                'cognome' => $cognome,
+                'email' => $email,
+                'signed_at' => ocms_now(),
+                'ip_hash' => substr(hash('sha256', ($_SERVER['REMOTE_ADDR'] ?? '') . ($sheet['id'] ?? '')), 0, 16),
+                'user_agent' => substr((string)($_SERVER['HTTP_USER_AGENT'] ?? ''), 0, 200),
+            ];
+            // Aggiunta sotto lock: con 25 studenti che firmano insieme nessuna firma va persa.
+            // Il controllo duplicati viene ripetuto sui dati freschi.
+            $dupInside = false;
+            $app->storage->update('fogliofirme', $sheet['slug'], function ($d) use ($firma, $email, &$dupInside) {
+                if (!$d) return null;
+                foreach ($d['firme'] ?? [] as $f) {
+                    if (strtolower(trim($f['email'] ?? '')) === $email) { $dupInside = true; return null; }
+                }
+                $d['firme'] = array_merge($d['firme'] ?? [], [$firma]);
+                $d['updated_at'] = ocms_now();
+                return $d;
+            });
+            if ($dupInside) {
+                ocms_redirect(ocms_base_url() . '/firma/' . $sheet['slug'] . '/fatto?dup=1');
+            }
+            // La firma è sempre registrata; il limite riguarda solo le email di conferma
+            // (contro chi userebbe il modulo per spedire email a raffica). Largo, perché
+            // un collegio docenti di 100 persone firma dallo stesso Wi-Fi.
+            $mailAllowed = ocms_rate_limit_ip('firma_mail_' . $sheet['slug'], 300, 3600);
+
+            if (!empty($sheet['send_email']) && $mailAllowed) {
+                $subject = 'Conferma firma: ' . ($sheet['name'] ?? 'evento');
+                $siteName = $app->config['site_name'] ?? 'Sito';
+                $baseUrl = rtrim(($app->config['site_url'] ?? '/s'), '/');
+                $when = ocms_format_date($firma['signed_at'], 'd/m/Y H:i');
+                $eventName = ocms_escape($sheet['name'] ?? '');
+                $customText = trim((string)($sheet['email_text'] ?? ''));
+                $extra = $customText !== '' ? '<p>' . nl2br(ocms_escape($customText)) . '</p>' : '';
+                $body = "<p>Ciao " . ocms_escape($nome) . ",</p>"
+                    . "<p>confermiamo la tua firma all'evento <strong>{$eventName}</strong> il {$when}.</p>"
+                    . $extra
+                    . "<p style='color:#888;font-size:0.85em;'>— {$siteName}</p>";
+                @ocms_send_mail($email, $subject, $body);
+            }
+            ocms_redirect(ocms_base_url() . '/firma/' . $sheet['slug'] . '/fatto');
+        });
+
+        $this->router->get('/firma/{slug}/fatto', function ($params) use ($app) {
+            $sheet = $app->storage->find('fogliofirme', $params['slug']);
+            if (!$sheet) { http_response_code(404); $app->render('404'); return; }
+            $app->render('firma/done', ['sheet' => $sheet, 'dup' => !empty($_GET['dup'])]);
+        });
+
+        $this->router->get('/firma/{slug}/show', function ($params) use ($app) {
+            // La schermata da proiettare mostra il codice d'accesso: serve il login dello
+            // staff oppure il link di proiezione firmato preso dall'admin (così la LIM
+            // dell'aula non deve entrare nell'admin)
+            $k = (string)($_GET['k'] ?? '');
+            $keyOk = $k !== '' && hash_equals(ocms_signed_token('firma-show:' . basename($params['slug'])), $k);
+            if (!$keyOk && !$app->auth->hasRole('editor')) {
+                ocms_flash_set('error', 'Accedi per proiettare il FoglioFirme.');
+                ocms_redirect(ocms_base_url() . '/admin/login');
+            }
+            $sheet = $app->storage->find('fogliofirme', $params['slug']);
+            if (!$sheet) { http_response_code(404); $app->render('404'); return; }
+            $app->render('firma/show', ['sheet' => $sheet]);
+        });
+
+        $this->router->get('/firma/{slug}/count', function ($params) use ($app) {
+            header('Content-Type: application/json');
+            $sheet = $app->storage->find('fogliofirme', $params['slug']);
+            if (!$sheet) { http_response_code(404); echo json_encode(['error' => 'not found']); return; }
+            $firmeArr = $sheet['firme'] ?? [];
+            $last = !empty($firmeArr) ? end($firmeArr) : null;
+            // Nomi e orari solo allo staff loggato o alla schermata di proiezione
+            // (link firmato): in pubblico basta il conteggio
+            $k = (string)($_GET['k'] ?? '');
+            $staff = $app->auth->hasRole('editor')
+                || ($k !== '' && hash_equals(ocms_signed_token('firma-show:' . basename($params['slug'])), $k));
+            echo json_encode([
+                'count' => count($firmeArr),
+                'status' => $sheet['status'] ?? 'open',
+                'last' => ($staff && $last) ? ['nome' => $last['nome'] ?? '', 'cognome' => $last['cognome'] ?? '', 'signed_at' => $last['signed_at'] ?? ''] : null,
+            ]);
+        });
+
+        // Pagina singola (catch-all, DEVE essere l'ultima rotta frontend)
         $this->router->get('/{slug}', function ($params) use ($app) {
             $page = $app->storage->find('pages', $params['slug']);
             if (!$page || $page['status'] !== 'published') {
@@ -801,11 +1069,17 @@ HTML;
             }
             ocms_track_visit('/' . $params['slug'], 'page');
 
-            // Increment page view counter
-            $page['views'] = ($page['views'] ?? 0) + 1;
-            $app->storage->save('pages', $page['slug'], $page);
+            // Incrementa contatore visite pagina
+            // Contatore visite: rilettura e scrittura sotto lock, così una visita
+            // non può sovrascrivere un salvataggio fatto nel frattempo dall'admin
+            $viewsSaved = $app->storage->update('pages', $page['slug'], function ($d) {
+                if (!$d) return null;
+                $d['views'] = ($d['views'] ?? 0) + 1;
+                return $d;
+            });
+            $page['views'] = $viewsSaved['views'] ?? ($page['views'] ?? 0) + 1;
 
-            // If the page has an assigned layout, use the Layout Builder
+            // Se la pagina ha un layout assegnato, usa il Layout Builder
             if (!empty($page['layout']) && $page['layout'] !== 'none') {
                 $app->renderWithLayout($page);
             } else {
@@ -814,12 +1088,8 @@ HTML;
         });
     }
 
-    // ─── ADMIN ROUTES ───
-
     /**
-     * Register all admin (back-office) routes.
-     *
-     * @return void
+     * Rotte admin
      */
     private function setupAdminRoutes(): void {
         $app = $this;
@@ -837,24 +1107,40 @@ HTML;
                 ocms_flash_set('error', 'Token di sicurezza non valido');
                 ocms_redirect(ocms_base_url() . '/admin/login');
             }
-            if (!ocms_rate_limit('login', 5, 300)) {
+            $username = trim((string)($_POST['username'] ?? ''));
+            $password = (string)($_POST['password'] ?? '');
+            // Tre livelli: per sessione, per IP (largo: in una scuola tutte le aule
+            // escono con lo stesso IP) e per coppia username+IP. Gli ultimi due contano
+            // solo i tentativi falliti. Niente blocco globale per username: chiunque
+            // potrebbe chiudere fuori l'amministratore sbagliando apposta la password.
+            $userKey = 'login_user_' . strtolower($username);
+            if (!ocms_rate_limit('login', 5, 300)
+                || ocms_rate_limited_ip('login_fail', 100, 900)
+                || ocms_rate_limited_ip($userKey, 10, 900)) {
                 ocms_flash_set('error', 'Troppi tentativi. Riprova tra qualche minuto.');
                 ocms_redirect(ocms_base_url() . '/admin/login');
             }
-            $username = trim($_POST['username'] ?? '');
-            $password = $_POST['password'] ?? '';
 
+            // Controllo "morbido" per account su tutti gli IP: oltre 20 errori in 15 minuti
+            // ogni tentativo aspetta 2 secondi (rallenta il brute force distribuito
+            // senza chiudere fuori il vero proprietario, che entra comunque)
+            if (ocms_rate_limited_ip($userKey, 20, 900, 'global')) {
+                sleep(2);
+            }
             $result = $app->auth->attempt($username, $password);
             if ($result['success']) {
                 ocms_flash_set('success', 'Benvenuto!');
-                ocms_redirect(ocms_base_url() . '/admin');
+                ocms_redirect(ocms_base_url() . $app->adminHomeFor($app->auth->user()));
             } else {
+                ocms_rate_limit_ip('login_fail', 100, 900);
+                ocms_rate_limit_ip($userKey, 10, 900);
+                ocms_rate_limit_ip($userKey, 1000, 900, 'global'); // solo conteggio per il rallentamento
                 ocms_flash_set('error', $result['error']);
                 ocms_redirect(ocms_base_url() . '/admin/login');
             }
         });
 
-        // Logout (accepts both GET and POST for compatibility; the layout link uses POST)
+        // Logout (accetta sia GET che POST per compatibilità, ma il link nel layout usa POST)
         $this->router->any('/logout', function () use ($app) {
             $app->auth->logout();
             ocms_redirect(ocms_base_url() . '/admin/login');
@@ -862,7 +1148,10 @@ HTML;
 
         // Dashboard
         $this->router->get('/', function () use ($app) {
-            $app->auth->requireRole('administrator');
+            $app->auth->requireRole('registered');
+            if (!$app->auth->hasRole('administrator')) {
+                ocms_redirect(ocms_base_url() . $app->adminHomeFor($app->auth->user()));
+            }
             $app->renderAdmin('dashboard', [
                 'pages_count' => $app->storage->count('pages'),
                 'articles_count' => $app->storage->count('articles'),
@@ -870,23 +1159,23 @@ HTML;
             ]);
         });
 
-        // ─── PAGES ───
+        // ─── PAGINE ───
 
-        // List pages
+        // Lista pagine
         $this->router->get('/pages', function () use ($app) {
             $app->auth->requireRole('editor');
             $pages = $app->storage->findAll('pages', null, 'updated_at', 'desc');
             $app->renderAdmin('pages/index', ['pages' => $pages]);
         });
 
-        // New page
+        // Nuova pagina
         $this->router->get('/pages/new', function () use ($app) {
             $app->auth->requireRole('editor');
             $layouts = $app->storage->findAll('layouts', null, 'name', 'asc');
             $app->renderAdmin('pages/edit', ['page' => null, 'layouts' => $layouts]);
         });
 
-        // Edit page
+        // Modifica pagina
         $this->router->get('/pages/edit/{slug}', function ($params) use ($app) {
             $app->auth->requireRole('editor');
             $page = $app->storage->find('pages', $params['slug']);
@@ -898,7 +1187,7 @@ HTML;
             $app->renderAdmin('pages/edit', ['page' => $page, 'layouts' => $layouts]);
         });
 
-        // Save page (create or update)
+        // Salva pagina (crea o aggiorna)
         $this->router->post('/pages/save', function () use ($app) {
             $app->auth->requireRole('editor');
             if (!ocms_csrf_verify()) {
@@ -906,51 +1195,63 @@ HTML;
                 ocms_redirect(ocms_base_url() . '/admin/pages');
             }
 
-            $isNew = empty($_POST['original_slug']);
-            $slug = ocms_slug($_POST['slug'] ?: $_POST['title']);
-            $originalSlug = $_POST['original_slug'] ?? '';
-
-            // If the slug changed, delete the old file
-            if (!$isNew && $originalSlug && $originalSlug !== $slug) {
-                $app->storage->delete('pages', $originalSlug);
+            $originalSlug = basename((string)($_POST['original_slug'] ?? ''));
+            $isNew = $originalSlug === '';
+            $wanted = ocms_slug(trim((string)($_POST['slug'] ?? '')) ?: (string)($_POST['title'] ?? ''));
+            if ($wanted === '') {
+                ocms_flash_set('error', 'Serve un titolo o uno slug');
+                ocms_redirect(ocms_base_url() . '/admin/pages' . ($isNew ? '/new' : '/edit/' . $originalSlug));
             }
 
-            // Load existing page to preserve extra fields (hero_image, sections, views)
-            $existingPage = !$isNew ? $app->storage->find('pages', $originalSlug ?: $slug) : null;
+            // La pagina esistente si legge prima di cancellare qualsiasi cosa
+            $existingPage = $isNew ? null : $app->storage->find('pages', $originalSlug);
+            if (!$isNew && !$existingPage) {
+                ocms_flash_set('error', 'Pagina originale non trovata: è stata eliminata o rinominata nel frattempo?');
+                ocms_redirect(ocms_base_url() . '/admin/pages');
+            }
+            $slug = ocms_unique_slug($app->storage, 'pages', $wanted, $originalSlug);
+            if ($slug !== $wanted) {
+                ocms_flash_set('warning', 'Lo slug era già usato da un\'altra pagina: salvata come "' . $slug . '"');
+            }
 
-            $page = [
-                'id' => $_POST['id'] ?: ocms_uuid(),
-                'title' => trim($_POST['title']),
+            if ($existingPage) {
+                ocms_save_revision($existingPage, '_page_' . $originalSlug, '_page_' . $slug);
+            }
+
+            // Si parte dalla pagina esistente: hero_image, sections, views e
+            // qualsiasi campo aggiunto via API restano dove sono
+            $page = array_merge($existingPage ?? [], [
+                'id' => $existingPage['id'] ?? (($_POST['id'] ?? '') ?: ocms_uuid()),
+                'title' => trim((string)($_POST['title'] ?? '')),
                 'slug' => $slug,
                 'content' => ocms_sanitize_html($_POST['content'] ?? ''),
                 'template' => $_POST['template'] ?? 'page',
                 'layout' => $_POST['layout'] ?? 'none',
-                'status' => $_POST['status'] ?? 'draft',
+                'status' => in_array($_POST['status'] ?? '', ['draft', 'published'], true) ? $_POST['status'] : 'draft',
                 'meta' => [
                     'title' => trim($_POST['meta_title'] ?? ''),
                     'description' => trim($_POST['meta_description'] ?? ''),
                     'og_image' => trim($_POST['og_image'] ?? ''),
                 ],
                 'order' => (int)($_POST['order'] ?? 0),
-                'parent' => $_POST['parent'] ?: null,
-                'author' => $app->auth->user()['username'],
-                'created_at' => $_POST['created_at'] ?: ocms_now(),
+                'parent' => ($_POST['parent'] ?? '') ?: null,
+                'author' => $existingPage['author'] ?? $app->auth->user()['username'],
+                'created_at' => $existingPage['created_at'] ?? (($_POST['created_at'] ?? '') ?: ocms_now()),
                 'updated_at' => ocms_now(),
-            ];
+            ]);
 
-            // Preserve extra fields not managed by the form
-            if ($existingPage) {
-                if (isset($existingPage['hero_image'])) $page['hero_image'] = $existingPage['hero_image'];
-                if (isset($existingPage['sections'])) $page['sections'] = $existingPage['sections'];
-                if (isset($existingPage['views'])) $page['views'] = $existingPage['views'];
+            if (!$app->storage->save('pages', $slug, $page)) {
+                ocms_flash_set('error', 'Salvataggio non riuscito: controlla i permessi della cartella data/');
+                ocms_redirect(ocms_base_url() . '/admin/pages' . ($isNew ? '/new' : '/edit/' . $originalSlug));
             }
-
-            $app->storage->save('pages', $slug, $page);
+            if (!$isNew && $originalSlug !== $slug) {
+                $app->storage->delete('pages', $originalSlug);
+            }
             ocms_flash_set('success', $isNew ? 'Pagina creata!' : 'Pagina aggiornata!');
             ocms_redirect(ocms_base_url() . '/admin/pages/edit/' . $slug);
         });
 
-        // Delete page
+        // Elimina pagina
         $this->router->post('/pages/delete/{slug}', function ($params) use ($app) {
             $app->auth->requireRole('administrator');
             if (!ocms_csrf_verify()) {
@@ -962,7 +1263,7 @@ HTML;
             ocms_redirect(ocms_base_url() . '/admin/pages');
         });
 
-        // ─── ARTICLES ───
+        // ─── ARTICOLI ───
 
         $this->router->get('/articles', function () use ($app) {
             $app->auth->requireRole('editor');
@@ -997,18 +1298,32 @@ HTML;
                 ocms_redirect(ocms_base_url() . '/admin/articles');
             }
 
-            $isNew = empty($_POST['original_slug']);
-            $slug = ocms_slug($_POST['slug'] ?: $_POST['title']);
-            $originalSlug = $_POST['original_slug'] ?? '';
+            $originalSlug = basename((string)($_POST['original_slug'] ?? ''));
+            $isNew = $originalSlug === '';
+            $slug = ocms_slug(trim((string)($_POST['slug'] ?? '')) ?: (string)($_POST['title'] ?? ''));
+            if ($slug === '') {
+                ocms_flash_set('error', 'Serve un titolo o uno slug');
+                ocms_redirect(ocms_base_url() . '/admin/articles' . ($isNew ? '/new' : '/edit/' . $originalSlug));
+            }
 
-            if (!$isNew && $originalSlug && $originalSlug !== $slug) {
-                $app->storage->delete('articles', $originalSlug);
+            // L'articolo esistente si legge PRIMA di qualsiasi modifica:
+            // prima una rinomina cancellava il file e poi cercava di rileggerlo
+            $existing = $isNew ? null : $app->storage->find('articles', $originalSlug);
+            if (!$isNew && !$existing) {
+                ocms_flash_set('error', 'Articolo originale non trovato: è stato eliminato o rinominato nel frattempo?');
+                ocms_redirect(ocms_base_url() . '/admin/articles');
+            }
+
+            // Slug già usato da un ALTRO articolo: niente sovrascrittura, si aggiunge un suffisso
+            $slug = ocms_unique_slug($app->storage, 'articles', $slug, $originalSlug);
+            if ($slug !== ocms_slug(trim((string)($_POST['slug'] ?? '')) ?: (string)($_POST['title'] ?? ''))) {
+                ocms_flash_set('warning', 'Lo slug era già usato da un altro articolo: salvato come "' . $slug . '"');
             }
 
             $tagsRaw = $_POST['tags'] ?? '';
-            $tagsArray = array_filter(array_map('trim', explode(',', $tagsRaw)));
+            $tagsArray = array_values(array_filter(array_map('trim', explode(',', $tagsRaw))));
 
-            // Auto-create tags if they don't exist
+            // Auto-crea tag se non esistono
             foreach ($tagsArray as $tagName) {
                 $tagSlug = ocms_slug($tagName);
                 if ($tagSlug && !$app->storage->exists('tags', $tagSlug)) {
@@ -1020,28 +1335,22 @@ HTML;
                 }
             }
 
-            // Save a revision of the previous article version (if it exists)
-            if (!$isNew) {
-                $oldSlug = $originalSlug ?: $slug;
-                $oldArticle = $app->storage->find('articles', $oldSlug);
-                if ($oldArticle) {
-                    $revDir = ocms_data_path('revisions/' . $slug);
-                    if (!is_dir($revDir)) mkdir($revDir, 0755, true);
-                    $revFile = $revDir . '/' . date('Y-m-d_H-i-s') . '.json';
-                    file_put_contents($revFile, json_encode($oldArticle, JSON_PRETTY_PRINT), LOCK_EX);
-                }
+            // Revisione della versione precedente; con la rinomina le revisioni seguono l'articolo
+            if ($existing) {
+                ocms_save_revision($existing, $originalSlug, $slug);
             }
 
-            // Preserve view count from the existing article
-            $existingViews = 0;
-            if (!$isNew) {
-                $existingArticle = $app->storage->find('articles', $originalSlug ?: $slug);
-                if ($existingArticle) $existingViews = $existingArticle['views'] ?? 0;
+            $publishAt = '';
+            if (!empty($_POST['publish_at'])) {
+                try { $publishAt = (new DateTime((string)$_POST['publish_at']))->format('c'); }
+                catch (\Throwable $e) { $publishAt = ''; }
             }
 
-            $article = [
-                'id' => $_POST['id'] ?: ocms_uuid(),
-                'title' => trim($_POST['title']),
+            // Si parte dall'articolo esistente: i campi che il form non conosce
+            // (aggiunti via API o da estensioni) non vanno persi
+            $article = array_merge($existing ?? [], [
+                'id' => $existing['id'] ?? (($_POST['id'] ?? '') ?: ocms_uuid()),
+                'title' => trim((string)($_POST['title'] ?? '')),
                 'slug' => $slug,
                 'excerpt' => trim($_POST['excerpt'] ?? ''),
                 'content' => ocms_sanitize_html($_POST['content'] ?? ''),
@@ -1049,21 +1358,27 @@ HTML;
                 'gallery' => json_decode($_POST['gallery'] ?? '[]', true) ?: [],
                 'category' => $_POST['category'] ?? '',
                 'tags' => $tagsArray,
-                'status' => $_POST['status'] ?? 'draft',
+                'status' => in_array($_POST['status'] ?? '', ['draft', 'published'], true) ? $_POST['status'] : 'draft',
                 'featured' => !empty($_POST['featured']),
-                'publish_at' => !empty($_POST['publish_at']) ? (new DateTime($_POST['publish_at']))->format('c') : '',
+                'publish_at' => $publishAt,
                 'meta' => [
                     'title' => trim($_POST['meta_title'] ?? ''),
                     'description' => trim($_POST['meta_description'] ?? ''),
                     'og_image' => trim($_POST['og_image'] ?? ''),
                 ],
-                'author' => $app->auth->user()['username'],
-                'created_at' => $_POST['created_at'] ?: ocms_now(),
+                'author' => $existing['author'] ?? $app->auth->user()['username'],
+                'created_at' => $existing['created_at'] ?? (($_POST['created_at'] ?? '') ?: ocms_now()),
                 'updated_at' => ocms_now(),
-                'views' => $existingViews,
-            ];
+                'views' => $existing['views'] ?? 0,
+            ]);
 
-            $app->storage->save('articles', $slug, $article);
+            if (!$app->storage->save('articles', $slug, $article)) {
+                ocms_flash_set('error', 'Salvataggio non riuscito: controlla i permessi della cartella data/');
+                ocms_redirect(ocms_base_url() . '/admin/articles' . ($isNew ? '/new' : '/edit/' . $originalSlug));
+            }
+            if (!$isNew && $originalSlug !== $slug) {
+                $app->storage->delete('articles', $originalSlug);
+            }
             ocms_flash_set('success', $isNew ? 'Articolo creato!' : 'Articolo aggiornato!');
             ocms_redirect(ocms_base_url() . '/admin/articles/edit/' . $slug);
         });
@@ -1079,14 +1394,14 @@ HTML;
             ocms_redirect(ocms_base_url() . '/admin/articles');
         });
 
-        // ─── COVER IMAGE UPLOAD ───
+        // ─── UPLOAD COVER IMAGE ───
 
         $this->router->post('/articles/upload-cover', function () use ($app) {
             $app->auth->requireRole('editor');
             header('Content-Type: application/json');
 
             $token = $_POST['_csrf_token'] ?? '';
-            if (!hash_equals($_SESSION['_csrf_token'] ?? '', $token)) {
+            if (!ocms_csrf_check($token)) {
                 http_response_code(403);
                 echo json_encode(['error' => 'Token CSRF non valido']);
                 return;
@@ -1132,7 +1447,7 @@ HTML;
             echo json_encode(['success' => true, 'url' => $url]);
         });
 
-        // ─── AI CONTENT GENERATION ───
+        // ─── AI GENERATE (Claude CLI) ───
 
         $this->router->post('/articles/ai-generate', function () use ($app) {
             $app->auth->requireRole('editor');
@@ -1144,7 +1459,7 @@ HTML;
             }
 
             $input = json_decode(file_get_contents('php://input'), true);
-            if (empty($_SESSION['_csrf_token']) || empty($input['_csrf_token']) || !hash_equals($_SESSION['_csrf_token'], $input['_csrf_token'])) {
+            if (!ocms_csrf_check($input['_csrf_token'] ?? null)) {
                 http_response_code(403);
                 echo json_encode(['error' => 'Token CSRF non valido']);
                 return;
@@ -1157,7 +1472,7 @@ HTML;
                 return;
             }
 
-            // Build the full prompt
+            // Costruisci il prompt completo
             $lang = $app->config['language'] ?? 'it';
             $aiConfig = $app->config['ai'] ?? [];
             $aiInstructions = $aiConfig['instructions'] ?? $app->config['ai_instructions'] ?? '';
@@ -1178,7 +1493,7 @@ HTML;
             $output = null;
             $provider = $aiConfig['provider'] ?? 'none';
 
-            // Local Claude CLI
+            // Claude CLI locale
             if ($provider === 'cli') {
                 $claudeScript = $app->config['ai_cli_script'] ?? '';
                 if (!$claudeScript || !file_exists($claudeScript)) {
@@ -1188,10 +1503,10 @@ HTML;
                 $tmpFile = tempnam(sys_get_temp_dir(), 'ocms_ai_');
                 file_put_contents($tmpFile, $fullPrompt);
                 chmod($tmpFile, 0644);
-                $output = shell_exec("{$claudeScript} " . escapeshellarg($tmpFile) . " 2>&1");
+                $output = function_exists('shell_exec') ? shell_exec(escapeshellarg($claudeScript) . ' ' . escapeshellarg($tmpFile) . ' 2>&1') : null;
                 @unlink($tmpFile);
             } else {
-                // Multi-provider API
+                // API multi-provider
                 $apiKey = $aiConfig['api_key'] ?? '';
                 $model = $aiConfig['model'] ?? '';
 
@@ -1200,7 +1515,7 @@ HTML;
                     return;
                 }
 
-                // Default models per provider
+                // Modelli default
                 $defaultModels = [
                     'anthropic' => 'claude-sonnet-4-20250514',
                     'openai' => 'gpt-4o',
@@ -1210,7 +1525,7 @@ HTML;
                 ];
                 if (empty($model)) $model = $defaultModels[$provider] ?? '';
 
-                // Build the API request
+                // Costruisci la richiesta API
                 $headers = [];
                 $url = '';
                 $body = '';
@@ -1263,7 +1578,7 @@ HTML;
                         return;
                 }
 
-                // Call the API
+                // Chiama l'API
                 $ctx = stream_context_create([
                     'http' => [
                         'method' => 'POST',
@@ -1276,7 +1591,7 @@ HTML;
 
                 $response = @file_get_contents($url, false, $ctx);
 
-                // Fallback to cURL if file_get_contents fails
+                // Fallback cURL se file_get_contents fallisce
                 if ($response === false && function_exists('curl_init')) {
                     $ch = curl_init($url);
                     curl_setopt_array($ch, [
@@ -1298,14 +1613,14 @@ HTML;
 
                 $data = json_decode($response, true);
 
-                // Extract error
+                // Estrai errore
                 if (isset($data['error'])) {
                     $errMsg = is_array($data['error']) ? ($data['error']['message'] ?? 'Errore sconosciuto') : $data['error'];
                     echo json_encode(['error' => 'Errore API: ' . $errMsg]);
                     return;
                 }
 
-                // Extract content from the response
+                // Estrai contenuto dalla risposta
                 $output = match ($provider) {
                     'anthropic' => $data['content'][0]['text'] ?? null,
                     'google' => $data['candidates'][0]['content']['parts'][0]['text'] ?? null,
@@ -1319,7 +1634,7 @@ HTML;
                 return;
             }
 
-            // Cleanup: remove markdown wrappers and extra text
+            // Pulizia: rimuovi markdown e testo extra
             $content = trim($output);
             $content = preg_replace('/```(?:html)?\s*/i', '', $content);
             $content = preg_replace('/\s*```/', '', $content);
@@ -1344,7 +1659,100 @@ HTML;
             ]);
         });
 
-        // ─── COMMENTS ───
+        // ─── INSTALLAZIONI (phone home) ───
+
+        // Updates — check GitHub releases for newer version
+        $this->router->get('/updates', function () use ($app) {
+            $app->auth->requireRole('super_administrator');
+            $app->renderAdmin('updates', [
+                'status' => $app->updater->getStatus(false),
+                'preflight' => $app->updater->preflightCheck(),
+                'logs' => $app->updater->listLogs(),
+            ]);
+        });
+
+        $this->router->post('/updates/check', function () use ($app) {
+            $app->auth->requireRole('super_administrator');
+            if (!ocms_csrf_verify()) {
+                ocms_flash_set('error', 'Token di sicurezza non valido');
+                ocms_redirect(ocms_base_url() . '/admin/updates');
+            }
+            $status = $app->updater->getStatus(true);
+            if ($status['error']) {
+                ocms_flash_set('error', 'Controllo aggiornamenti fallito: ' . $status['error']);
+            } elseif ($status['update_available']) {
+                ocms_flash_set('success', 'Nuova versione disponibile: ' . $status['latest']);
+            } else {
+                ocms_flash_set('success', 'O-CMS è aggiornato all\'ultima versione.');
+            }
+            ocms_redirect(ocms_base_url() . '/admin/updates');
+        });
+
+        // Apply update (download + swap + rollback-on-failure)
+        $this->router->post('/updates/apply', function () use ($app) {
+            $app->auth->requireRole('super_administrator');
+            if (!ocms_csrf_verify()) {
+                ocms_flash_set('error', 'Token di sicurezza non valido');
+                ocms_redirect(ocms_base_url() . '/admin/updates');
+            }
+
+            $status = $app->updater->getStatus(false);
+            if (!$status['update_available'] || empty($status['download_url']) || empty($status['latest'])) {
+                ocms_flash_set('error', 'Nessun aggiornamento disponibile o URL di download mancante.');
+                ocms_redirect(ocms_base_url() . '/admin/updates');
+            }
+
+            // Confirm target matches what the user saw (stale-form protection)
+            $expectedTarget = $_POST['target_version'] ?? '';
+            if ($expectedTarget !== $status['latest']) {
+                ocms_flash_set('error', 'La versione di destinazione è cambiata. Ricontrolla e riprova.');
+                ocms_redirect(ocms_base_url() . '/admin/updates');
+            }
+
+            $preflight = $app->updater->preflightCheck();
+            if (!$preflight['ok']) {
+                ocms_flash_set('error', 'Preflight fallito: ' . implode('; ', $preflight['issues']));
+                ocms_redirect(ocms_base_url() . '/admin/updates');
+            }
+
+            @set_time_limit(180);
+            $result = $app->updater->applyUpdate($status['download_url'], $status['latest'], $status['sha256_url'] ?? null, $status['zip_name'] ?? null);
+            ocms_flash_set($result['success'] ? 'success' : 'error', $result['message']);
+            if ($result['log_file']) {
+                ocms_flash_set('info', 'Log: ' . $result['log_file']);
+            }
+            ocms_redirect(ocms_base_url() . '/admin/updates');
+        });
+
+        $this->router->get('/updates/log/{name}', function ($params) use ($app) {
+            $app->auth->requireRole('super_administrator');
+            $content = $app->updater->readLog($params['name']);
+            if ($content === null) {
+                http_response_code(404);
+                echo 'Log non trovato';
+                return;
+            }
+            header('Content-Type: text/plain; charset=utf-8');
+            echo $content;
+        });
+
+        $this->router->get('/installations', function () use ($app) {
+            $app->auth->requireRole('super_administrator');
+            $logFile = dirname(ocms_base_path()) . '/ocms-data/installs.json';
+            $installations = [];
+            if (file_exists($logFile)) {
+                $installations = json_decode(file_get_contents($logFile), true) ?: [];
+            }
+            // Ordina per data ricezione (più recente prima)
+            usort($installations, function ($a, $b) {
+                return strcmp($b['received_at'] ?? '', $a['received_at'] ?? '');
+            });
+            $app->renderAdmin('installations/index', [
+                'installations' => $installations,
+            ]);
+        });
+
+        // ─── COMMENTI ───
 
         $this->router->get('/comments', function () use ($app) {
             $app->auth->requireRole('editor');
@@ -1360,7 +1768,7 @@ HTML;
             $app->auth->requireRole('editor');
             header('Content-Type: application/json');
             $input = json_decode(file_get_contents('php://input'), true);
-            if (empty($_SESSION['_csrf_token']) || empty($input['_csrf_token']) || !hash_equals($_SESSION['_csrf_token'], $input['_csrf_token'])) {
+            if (!ocms_csrf_check($input['_csrf_token'] ?? null)) {
                 http_response_code(403);
                 echo json_encode(['error' => 'CSRF non valido']);
                 return;
@@ -1377,7 +1785,7 @@ HTML;
             $app->auth->requireRole('editor');
             header('Content-Type: application/json');
             $input = json_decode(file_get_contents('php://input'), true);
-            if (empty($_SESSION['_csrf_token']) || empty($input['_csrf_token']) || !hash_equals($_SESSION['_csrf_token'], $input['_csrf_token'])) {
+            if (!ocms_csrf_check($input['_csrf_token'] ?? null)) {
                 http_response_code(403);
                 echo json_encode(['error' => 'CSRF non valido']);
                 return;
@@ -1394,7 +1802,7 @@ HTML;
             $app->auth->requireRole('administrator');
             header('Content-Type: application/json');
             $input = json_decode(file_get_contents('php://input'), true);
-            if (empty($_SESSION['_csrf_token']) || empty($input['_csrf_token']) || !hash_equals($_SESSION['_csrf_token'], $input['_csrf_token'])) {
+            if (!ocms_csrf_check($input['_csrf_token'] ?? null)) {
                 http_response_code(403);
                 echo json_encode(['error' => 'CSRF non valido']);
                 return;
@@ -1407,7 +1815,7 @@ HTML;
             $app->auth->requireRole('editor');
             header('Content-Type: application/json');
             $input = json_decode(file_get_contents('php://input'), true);
-            if (empty($_SESSION['_csrf_token']) || empty($input['_csrf_token']) || !hash_equals($_SESSION['_csrf_token'], $input['_csrf_token'])) {
+            if (!ocms_csrf_check($input['_csrf_token'] ?? null)) {
                 http_response_code(403);
                 echo json_encode(['error' => 'CSRF non valido']);
                 return;
@@ -1442,7 +1850,7 @@ HTML;
             echo json_encode(['success' => true, 'reply' => $reply]);
         });
 
-        // ─── REVISIONS ───
+        // ─── REVISIONI ───
 
         $this->router->get('/articles/revisions/{slug}', function ($params) use ($app) {
             $app->auth->requireRole('editor');
@@ -1469,6 +1877,33 @@ HTML;
             $app->renderAdmin('articles/revisions', ['article' => $article, 'revisions' => $revisions]);
         });
 
+        // Confronto di una revisione con la versione attuale
+        $this->router->get('/articles/revisions/{slug}/diff/{rev}', function ($params) use ($app) {
+            $app->auth->requireRole('editor');
+            $slug = basename($params['slug']);
+            $revName = preg_match('/^[0-9A-Za-z_-]+$/', $params['rev']) ? $params['rev'] : '';
+            $article = $app->storage->find('articles', $slug);
+            $revFile = ocms_data_path('revisions/' . $slug . '/' . $revName . '.json');
+            $rev = ($revName !== '' && is_file($revFile)) ? json_decode((string)file_get_contents($revFile), true) : null;
+            if (!$article || !is_array($rev)) {
+                ocms_flash_set('error', 'Revisione non trovata');
+                ocms_redirect(ocms_base_url() . '/admin/articles/revisions/' . $slug);
+            }
+            $fields = [];
+            foreach (['title' => 'Titolo', 'slug' => 'Slug', 'excerpt' => 'Estratto', 'status' => 'Stato', 'category' => 'Categoria', 'cover_image' => 'Cover'] as $k => $label) {
+                $old = is_scalar($rev[$k] ?? '') ? (string)($rev[$k] ?? '') : json_encode($rev[$k]);
+                $new = is_scalar($article[$k] ?? '') ? (string)($article[$k] ?? '') : json_encode($article[$k]);
+                if ($old !== $new) $fields[] = ['label' => $label, 'old' => $old, 'new' => $new];
+            }
+            $oldTags = implode(', ', (array)($rev['tags'] ?? [])); $newTags = implode(', ', (array)($article['tags'] ?? []));
+            if ($oldTags !== $newTags) $fields[] = ['label' => 'Tag', 'old' => $oldTags, 'new' => $newTags];
+            $diff = ocms_line_diff(ocms_html_to_lines((string)($rev['content'] ?? '')), ocms_html_to_lines((string)($article['content'] ?? '')));
+            $app->renderAdmin('articles/revision-diff', [
+                'article' => $article, 'rev' => $rev, 'revName' => $revName, 'fields' => $fields, 'diff' => $diff,
+                'htmlChanged' => ($rev['content'] ?? '') !== ($article['content'] ?? ''),
+            ]);
+        });
+
         $this->router->post('/articles/revisions/restore/{slug}/{rev}', function ($params) use ($app) {
             $app->auth->requireRole('editor');
             if (!ocms_csrf_verify()) {
@@ -1477,22 +1912,30 @@ HTML;
                 return;
             }
 
-            $revFile = ocms_data_path('revisions/' . $params['slug'] . '/' . $params['rev'] . '.json');
-            if (!file_exists($revFile)) {
+            $params['slug'] = basename($params['slug']);
+            $revName = preg_match('/^[0-9A-Za-z_-]+$/', $params['rev']) ? $params['rev'] : '';
+            $revFile = ocms_data_path('revisions/' . $params['slug'] . '/' . $revName . '.json');
+            if ($revName === '' || !is_file($revFile) || !$app->storage->exists('articles', $params['slug'])) {
                 ocms_flash_set('error', 'Revisione non trovata');
                 ocms_redirect(ocms_base_url() . '/admin/articles/revisions/' . $params['slug']);
                 return;
             }
 
-            // Save current version as a new revision before restoring
+            // Salva versione corrente come nuova revisione prima di ripristinare
             $current = $app->storage->find('articles', $params['slug']);
+            $rev = json_decode((string)file_get_contents($revFile), true);
+            if (!is_array($rev)) {
+                ocms_flash_set('error', 'Revisione illeggibile');
+                ocms_redirect(ocms_base_url() . '/admin/articles/revisions/' . $params['slug']);
+                return;
+            }
             if ($current) {
-                $revDir = ocms_data_path('revisions/' . $params['slug']);
-                $backupFile = $revDir . '/' . date('Y-m-d_H-i-s') . '.json';
-                file_put_contents($backupFile, json_encode($current, JSON_PRETTY_PRINT), LOCK_EX);
+                ocms_save_revision($current, $params['slug'], $params['slug']);
             }
 
-            $rev = json_decode(file_get_contents($revFile), true);
+            // La revisione può avere uno slug vecchio (articolo rinominato) e visite superate
+            $rev['slug'] = $params['slug'];
+            $rev['views'] = $current['views'] ?? ($rev['views'] ?? 0);
             $rev['updated_at'] = ocms_now();
             $app->storage->save('articles', $params['slug'], $rev);
 
@@ -1507,7 +1950,7 @@ HTML;
             header('Content-Type: application/json');
 
             $token = $_POST['_csrf_token'] ?? '';
-            if (!hash_equals($_SESSION['_csrf_token'] ?? '', $token)) {
+            if (!ocms_csrf_check($token)) {
                 http_response_code(403);
                 echo json_encode(['error' => 'Token CSRF non valido']);
                 return;
@@ -1545,11 +1988,11 @@ HTML;
             $uniq = substr(bin2hex(random_bytes(4)), 0, 8);
             $fileName = $safeName . '-' . time() . '-' . $uniq . '.' . $ext;
 
-            // Save full-size (resized to max 1600px)
+            // Salva full-size (ridimensionata a max 1600px)
             $fullPath = $galleryDir . '/' . $fileName;
             ocms_resize_image($file['tmp_name'], $fullPath, 1600, 1200);
 
-            // Generate thumbnail (400x300)
+            // Genera thumbnail (400x300)
             $thumbName = 'thumb-' . $fileName;
             $thumbExt = ($ext === 'png') ? $ext : 'jpg';
             $thumbName = pathinfo($thumbName, PATHINFO_FILENAME) . '.' . $thumbExt;
@@ -1562,12 +2005,12 @@ HTML;
             echo json_encode(['success' => true, 'url' => $url, 'thumb' => $thumbUrl, 'name' => $file['name']]);
         });
 
-        // ─── CATEGORIES ───
+        // ─── CATEGORIE ───
 
         $this->router->get('/categories', function () use ($app) {
             $app->auth->requireRole('editor');
             $categories = $app->storage->findAll('categories', null, 'name', 'asc');
-            // Count articles per category
+            // Conta articoli per categoria
             foreach ($categories as &$cat) {
                 $catSlug = $cat['slug'];
                 $cat['article_count'] = $app->storage->count('articles', fn($a) => ($a['category'] ?? '') === $catSlug);
@@ -1579,7 +2022,7 @@ HTML;
             $app->auth->requireRole('editor');
             header('Content-Type: application/json');
             $input = json_decode(file_get_contents('php://input'), true);
-            if (empty($_SESSION['_csrf_token']) || empty($input['_csrf_token']) || !hash_equals($_SESSION['_csrf_token'], $input['_csrf_token'])) {
+            if (!ocms_csrf_check($input['_csrf_token'] ?? null)) {
                 http_response_code(403);
                 echo json_encode(['error' => 'Token CSRF non valido']);
                 return;
@@ -1612,7 +2055,7 @@ HTML;
             $catSlug = $params['slug'];
             $moveTo = $_POST['move_to'] ?? '';
 
-            // Move or unset articles from this category
+            // Sposta o svuota gli articoli di questa categoria
             $articles = $app->storage->findAll('articles', fn($a) => ($a['category'] ?? '') === $catSlug);
             foreach ($articles as $a) {
                 $a['category'] = $moveTo ?: '';
@@ -1631,7 +2074,7 @@ HTML;
             ocms_redirect(ocms_base_url() . '/admin/categories');
         });
 
-        // Bulk-move articles to another category
+        // Spostamento di massa articoli
         $this->router->post('/articles/bulk-move', function () use ($app) {
             $app->auth->requireRole('editor');
             if (!ocms_csrf_verify()) {
@@ -1679,10 +2122,15 @@ HTML;
         $this->router->post('/media/upload', function () use ($app) {
             $app->auth->requireRole('editor');
             header('Content-Type: application/json');
+            if (ocms_upload_too_big()) {
+                http_response_code(413);
+                echo json_encode(['error' => 'File troppo grande per il server (limite ' . ini_get('post_max_size') . ')']);
+                return;
+            }
 
             $input = $_POST;
             $token = $input['_csrf_token'] ?? '';
-            if (!hash_equals($_SESSION['_csrf_token'] ?? '', $token)) {
+            if (!ocms_csrf_check($token)) {
                 http_response_code(403);
                 echo json_encode(['error' => 'Token CSRF non valido']);
                 return;
@@ -1702,9 +2150,9 @@ HTML;
                 return;
             }
 
-            $allowedTypes = ['image/jpeg','image/png','image/gif','image/webp',
+            $allowedTypes = ['image/jpeg','image/png','image/gif','image/webp','image/avif',
                              'application/pdf','text/plain','application/zip',
-                             'video/mp4','audio/mpeg','audio/mp3'];
+                             'video/mp4','video/webm','audio/mpeg','audio/mp3','audio/ogg','audio/wav','audio/x-wav'];
             $finfo = finfo_open(FILEINFO_MIME_TYPE);
             $mimeType = finfo_file($finfo, $file['tmp_name']);
             finfo_close($finfo);
@@ -1715,12 +2163,20 @@ HTML;
                 return;
             }
 
-            // Determine upload sub-directory
+            // Determina sottocartella
             $subDir = str_starts_with($mimeType, 'image/') ? 'images' : (str_starts_with($mimeType, 'video/') || str_starts_with($mimeType, 'audio/') ? 'media' : 'documents');
             $uploadDir = ocms_base_path() . '/uploads/' . $subDir;
             if (!is_dir($uploadDir)) mkdir($uploadDir, 0755, true);
 
-            // Safe filename with timestamp
+            // L'estensione deve essere coerente col contenuto reale del file:
+            // un "foto.php" che inizia con GIF89a non deve mai arrivare in uploads/
+            if (!ocms_upload_name_ok($file['name'], ocms_ext_for_mime($mimeType))) {
+                http_response_code(400);
+                echo json_encode(['error' => 'Estensione del file non consentita o non coerente con il contenuto']);
+                return;
+            }
+
+            // Nome file sicuro con timestamp
             $ext = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
             $safeName = ocms_slug(pathinfo($file['name'], PATHINFO_FILENAME));
             $uniq = substr(bin2hex(random_bytes(4)), 0, 8);
@@ -1736,7 +2192,7 @@ HTML;
             $url = '/uploads/' . $subDir . '/' . $fileName;
             $mediaId = ocms_slug($safeName) . '-' . time();
 
-            // Save metadata
+            // Salva metadati
             $meta = [
                 'id' => $mediaId,
                 'filename' => $fileName,
@@ -1749,7 +2205,7 @@ HTML;
                 'uploaded_at' => ocms_now(),
             ];
 
-            // Image dimensions
+            // Dimensioni immagine
             if (str_starts_with($mimeType, 'image/')) {
                 $dims = getimagesize($destPath);
                 if ($dims) {
@@ -1767,7 +2223,7 @@ HTML;
             header('Content-Type: application/json');
 
             $input = json_decode(file_get_contents('php://input'), true);
-            if (empty($_SESSION['_csrf_token']) || empty($input['_csrf_token']) || !hash_equals($_SESSION['_csrf_token'], $input['_csrf_token'])) {
+            if (!ocms_csrf_check($input['_csrf_token'] ?? null)) {
                 http_response_code(403);
                 echo json_encode(['error' => 'Token CSRF non valido']);
                 return;
@@ -1782,23 +2238,23 @@ HTML;
             echo json_encode(['success' => true]);
         });
 
-        // ─── MENUS ───
+        // ─── MENU ───
 
-        // List menus
+        // Lista menu
         $this->router->get('/menus', function () use ($app) {
             $app->auth->requireRole('editor');
             $menus = $app->storage->findAll('menus', null, 'name', 'asc');
             $app->renderAdmin('menus/index', ['menus' => $menus]);
         });
 
-        // New menu
+        // Nuovo menu
         $this->router->get('/menus/new', function () use ($app) {
             $app->auth->requireRole('editor');
             $pages = $app->storage->findAll('pages', fn($p) => $p['status'] === 'published', 'title', 'asc');
             $app->renderAdmin('menus/edit', ['menu' => null, 'pages' => $pages]);
         });
 
-        // Edit menu
+        // Modifica menu
         $this->router->get('/menus/edit/{name}', function ($params) use ($app) {
             $app->auth->requireRole('editor');
             $menu = $app->storage->find('menus', $params['name']);
@@ -1810,7 +2266,7 @@ HTML;
             $app->renderAdmin('menus/edit', ['menu' => $menu, 'pages' => $pages]);
         });
 
-        // Save menu (via AJAX — receives JSON)
+        // Salva menu (via AJAX — riceve JSON)
         $this->router->post('/menus/save', function () use ($app) {
             $app->auth->requireRole('editor');
             header('Content-Type: application/json');
@@ -1823,7 +2279,7 @@ HTML;
             }
 
             $token = $input['_csrf_token'] ?? '';
-            if (!hash_equals($_SESSION['_csrf_token'] ?? '', $token)) {
+            if (!ocms_csrf_check($token)) {
                 http_response_code(403);
                 echo json_encode(['error' => 'Token CSRF non valido']);
                 return;
@@ -1832,7 +2288,7 @@ HTML;
             $name = ocms_slug($input['name']);
             $originalName = $input['original_name'] ?? '';
 
-            // If the name changed, delete the old one
+            // Se il nome è cambiato, elimina il vecchio
             if ($originalName && $originalName !== $name) {
                 $app->storage->delete('menus', $originalName);
             }
@@ -1847,7 +2303,7 @@ HTML;
             echo json_encode(['success' => true, 'name' => $name]);
         });
 
-        // Delete menu
+        // Elimina menu
         $this->router->post('/menus/delete/{name}', function ($params) use ($app) {
             $app->auth->requireRole('administrator');
             if (!ocms_csrf_verify()) {
@@ -1859,7 +2315,7 @@ HTML;
             ocms_redirect(ocms_base_url() . '/admin/menus');
         });
 
-        // ─── USERS ───
+        // ─── UTENTI ───
 
         $this->router->get('/users', function () use ($app) {
             $app->auth->requireRole('administrator');
@@ -1892,7 +2348,28 @@ HTML;
             $username = trim($_POST['username'] ?? '');
             $isNew = !empty($_POST['is_new']);
 
+            // Nessuno può assegnare un ruolo superiore al proprio,
+            // né modificare un utente di livello superiore
+            $levels = $app->auth->getRoleHierarchy();
+            $me = $app->auth->user();
+            $myLevel = $levels[$me['role'] ?? ''] ?? 0;
+            $isSelf = !$isNew && $username === ($me['username'] ?? null);
+            $backUrl = ocms_base_url() . '/admin/users' . ($isNew ? '/new' : '/edit/' . rawurlencode($username));
+            $requestedRole = (string)($_POST['role'] ?? '');
+            if ($requestedRole !== '' && (!isset($levels[$requestedRole]) || $levels[$requestedRole] > $myLevel)) {
+                ocms_flash_set('error', 'Non puoi assegnare questo ruolo');
+                ocms_redirect($backUrl);
+            }
+
             if ($isNew) {
+                if (!preg_match('/^[a-zA-Z0-9._-]{2,40}$/', $username)) {
+                    ocms_flash_set('error', 'Username non valido: usa 2-40 caratteri tra lettere, numeri, punto, trattino e underscore');
+                    ocms_redirect($backUrl);
+                }
+                if (strlen((string)($_POST['password'] ?? '')) < 8) {
+                    ocms_flash_set('error', 'La password deve avere almeno 8 caratteri');
+                    ocms_redirect($backUrl);
+                }
                 if ($app->storage->exists('users', $username)) {
                     ocms_flash_set('error', 'Username già in uso');
                     ocms_redirect(ocms_base_url() . '/admin/users/new');
@@ -1903,7 +2380,7 @@ HTML;
                     'email' => trim($_POST['email'] ?? ''),
                     'password' => password_hash($_POST['password'], PASSWORD_DEFAULT),
                     'display_name' => trim($_POST['display_name'] ?? $username),
-                    'role' => $_POST['role'] ?? 'registered',
+                    'role' => $requestedRole !== '' ? $requestedRole : 'registered',
                     'avatar' => '',
                     'active' => true,
                     'created_at' => ocms_now(),
@@ -1915,10 +2392,23 @@ HTML;
                     ocms_flash_set('error', 'Utente non trovato');
                     ocms_redirect(ocms_base_url() . '/admin/users');
                 }
+                if (($levels[$user['role'] ?? ''] ?? 0) > $myLevel) {
+                    ocms_flash_set('error', 'Non puoi modificare un utente con un ruolo superiore al tuo');
+                    ocms_redirect(ocms_base_url() . '/admin/users');
+                }
                 $user['email'] = trim($_POST['email'] ?? '');
                 $user['display_name'] = trim($_POST['display_name'] ?? '');
-                $user['role'] = $_POST['role'] ?? $user['role'];
-                $user['active'] = isset($_POST['active']);
+                if ($isSelf) {
+                    // da sé stessi non ci si declassa né ci si disattiva (si resterebbe chiusi fuori)
+                    $user['active'] = true;
+                } else {
+                    if ($requestedRole !== '') $user['role'] = $requestedRole;
+                    $user['active'] = isset($_POST['active']);
+                }
+                if (!empty($_POST['password']) && strlen((string)$_POST['password']) < 8) {
+                    ocms_flash_set('error', 'La password deve avere almeno 8 caratteri');
+                    ocms_redirect($backUrl);
+                }
                 if (!empty($_POST['password'])) {
                     $user['password'] = password_hash($_POST['password'], PASSWORD_DEFAULT);
                 }
@@ -1944,7 +2434,7 @@ HTML;
             ocms_redirect(ocms_base_url() . '/admin/users');
         });
 
-        // ─── SETTINGS ───
+        // ─── IMPOSTAZIONI ───
 
         $this->router->get('/settings', function () use ($app) {
             $app->auth->requireRole('super_administrator');
@@ -1959,6 +2449,9 @@ HTML;
                 ocms_redirect(ocms_base_url() . '/admin/settings');
             }
 
+            // Si parte dalla configurazione esistente: le chiavi che il form non
+            // mostra (installation_notified, impostazioni di estensioni, ecc.) restano
+            $previousConfig = $app->storage->readFile('config.json') ?? [];
             $config = [
                 'site_name' => trim($_POST['site_name'] ?? ''),
                 'site_description' => trim($_POST['site_description'] ?? ''),
@@ -1979,7 +2472,8 @@ HTML;
                     'port' => (int)($_POST['smtp_port'] ?? 587),
                     'encryption' => $_POST['smtp_encryption'] ?? 'tls',
                     'username' => trim($_POST['smtp_username'] ?? ''),
-                    'password' => trim($_POST['smtp_password'] ?? ''),
+                    // password vuota nel form = lascia quella salvata
+                    'password' => trim($_POST['smtp_password'] ?? '') !== '' ? trim($_POST['smtp_password']) : ($previousConfig['smtp']['password'] ?? ''),
                     'from_email' => trim($_POST['smtp_from_email'] ?? ''),
                     'from_name' => trim($_POST['smtp_from_name'] ?? ''),
                 ],
@@ -1997,39 +2491,28 @@ HTML;
                 ],
             ];
 
-            $app->storage->writeFile('config.json', $config);
-
-            // Generate sitemap.xml
-            $sitemap = '<?xml version="1.0" encoding="UTF-8"?>' . "\n";
-            $sitemap .= '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">' . "\n";
-            $baseUrl = $config['site_url'];
-            $sitemap .= "  <url><loc>{$baseUrl}/</loc><priority>1.0</priority></url>\n";
-            $pages = $app->storage->findAll('pages', fn($p) => $p['status'] === 'published');
-            foreach ($pages as $p) {
-                $sitemap .= "  <url><loc>{$baseUrl}/{$p['slug']}</loc><lastmod>{$p['updated_at']}</lastmod></url>\n";
+            $config = array_replace($previousConfig, $config);
+            if (!$app->storage->writeFile('config.json', $config)) {
+                ocms_flash_set('error', 'Impossibile salvare config.json: controlla i permessi della cartella data/');
+                ocms_redirect(ocms_base_url() . '/admin/settings');
             }
-            $articles = $app->storage->findAll('articles', fn($a) => $a['status'] === 'published');
-            foreach ($articles as $a) {
-                $sitemap .= "  <url><loc>{$baseUrl}/blog/{$a['slug']}</loc><lastmod>{$a['updated_at']}</lastmod></url>\n";
-            }
-            $sitemap .= "</urlset>\n";
-            file_put_contents(ocms_base_path() . '/sitemap.xml', $sitemap);
 
-            // Generate robots.txt
-            file_put_contents(ocms_base_path() . '/robots.txt', $config['seo_global']['robots'] ?? '');
+            // Sitemap con URL assoluti (solo contenuti pubblici) e robots.txt con la riga Sitemap
+            @file_put_contents(ocms_base_path() . '/sitemap.xml', ocms_generate_sitemap($app->storage), LOCK_EX);
+            @file_put_contents(ocms_base_path() . '/robots.txt', ocms_build_robots((string)($config['seo_global']['robots'] ?? '')), LOCK_EX);
 
             ocms_flash_set('success', 'Impostazioni salvate! Sitemap e robots.txt aggiornati.');
             ocms_redirect(ocms_base_url() . '/admin/settings');
         });
 
-        // Test email delivery
+        // Test invio email
         $this->router->post('/settings/test-email', function () use ($app) {
             $app->auth->requireRole('super_administrator');
             header('Content-Type: application/json');
 
             $input = json_decode(file_get_contents('php://input'), true);
             $token = $input['_csrf_token'] ?? '';
-            if (!hash_equals($_SESSION['_csrf_token'] ?? '', $token)) {
+            if (!ocms_csrf_check($token)) {
                 http_response_code(403);
                 echo json_encode(['error' => 'Token CSRF non valido']);
                 return;
@@ -2075,7 +2558,7 @@ HTML;
             }
         });
 
-        // Test AI connection
+        // Test connessione AI
         $this->router->post('/settings/test-ai', function () use ($app) {
             $app->auth->requireRole('super_administrator');
             header('Content-Type: application/json');
@@ -2083,7 +2566,7 @@ HTML;
 
             $input = json_decode(file_get_contents('php://input'), true);
             $token = $input['_csrf_token'] ?? '';
-            if (!hash_equals($_SESSION['_csrf_token'] ?? '', $token)) {
+            if (!ocms_csrf_check($token)) {
                 echo json_encode(['success' => false, 'error' => 'Token CSRF non valido']);
                 return;
             }
@@ -2116,7 +2599,7 @@ HTML;
                 $tmpFile = tempnam(sys_get_temp_dir(), 'ocms_ai_test_');
                 file_put_contents($tmpFile, $testPrompt);
                 chmod($tmpFile, 0644);
-                $output = shell_exec("{$script} " . escapeshellarg($tmpFile) . " 2>&1");
+                $output = function_exists('shell_exec') ? shell_exec(escapeshellarg($script) . ' ' . escapeshellarg($tmpFile) . ' 2>&1') : null;
                 @unlink($tmpFile);
                 if ($output && strlen(trim($output)) > 0) {
                     echo json_encode(['success' => true, 'message' => 'Claude CLI funziona. Risposta: ' . ocms_truncate(trim($output), 100)]);
@@ -2222,6 +2705,144 @@ HTML;
             }
         });
 
+        // ─── FOGLIOFIRME (admin) ───
+
+        $this->router->get('/fogliofirme', function () use ($app) {
+            $app->auth->requireRole('administrator');
+            $sheets = $app->storage->findAll('fogliofirme', null, 'created_at', 'desc');
+            $app->renderAdmin('fogliofirme/index', ['sheets' => $sheets]);
+        });
+
+        $this->router->get('/fogliofirme/new', function () use ($app) {
+            $app->auth->requireRole('administrator');
+            $app->renderAdmin('fogliofirme/edit', ['sheet' => null]);
+        });
+
+        $this->router->get('/fogliofirme/edit/{slug}', function ($params) use ($app) {
+            $app->auth->requireRole('administrator');
+            $sheet = $app->storage->find('fogliofirme', $params['slug']);
+            if (!$sheet) { ocms_flash_set('error', 'FoglioFirme non trovato'); ocms_redirect(ocms_base_url() . '/admin/fogliofirme'); }
+            $app->renderAdmin('fogliofirme/edit', ['sheet' => $sheet]);
+        });
+
+        $this->router->post('/fogliofirme/save', function () use ($app) {
+            $app->auth->requireRole('administrator');
+            if (!ocms_csrf_verify()) {
+                ocms_flash_set('error', 'Token CSRF non valido');
+                ocms_redirect(ocms_base_url() . '/admin/fogliofirme');
+            }
+            $originalSlug = trim((string)($_POST['original_slug'] ?? ''));
+            $name = trim((string)($_POST['name'] ?? ''));
+            if ($name === '') {
+                ocms_flash_set('error', 'Il nome evento è obbligatorio');
+                ocms_redirect(ocms_base_url() . '/admin/fogliofirme/' . ($originalSlug !== '' ? 'edit/' . $originalSlug : 'new'));
+            }
+            $slug = ocms_slug(trim((string)($_POST['slug'] ?? '')) ?: $name);
+            if ($slug === '') { $slug = 'evento-' . date('Ymd-His'); }
+            // Evita collisioni se nuovo o rinominato
+            if ($slug !== $originalSlug && $app->storage->exists('fogliofirme', $slug)) {
+                $slug .= '-' . substr(ocms_uuid(), 0, 6);
+            }
+            $existing = $originalSlug !== '' ? $app->storage->find('fogliofirme', $originalSlug) : null;
+            $accessCode = trim((string)($_POST['access_code'] ?? ''));
+            $sheet = [
+                'id' => $existing['id'] ?? ocms_uuid(),
+                'slug' => $slug,
+                'name' => $name,
+                'description' => trim((string)($_POST['description'] ?? '')),
+                'event_date' => trim((string)($_POST['event_date'] ?? '')),
+                'access_code' => $accessCode,
+                'send_email' => !empty($_POST['send_email']),
+                'email_text' => trim((string)($_POST['email_text'] ?? '')),
+                'auto_close_at' => trim((string)($_POST['auto_close_at'] ?? '')),
+                'status' => in_array($_POST['status'] ?? 'open', ['open', 'closed'], true) ? $_POST['status'] : 'open',
+                'firme' => $existing['firme'] ?? [],
+                'author' => $existing['author'] ?? ($app->auth->user()['username'] ?? 'admin'),
+                'created_at' => $existing['created_at'] ?? ocms_now(),
+                'updated_at' => ocms_now(),
+            ];
+            if ($originalSlug !== '' && $originalSlug !== $slug) {
+                // rinomina: le firme si rileggono all'ultimo momento, poi il vecchio file sparisce
+                $fresh = $app->storage->find('fogliofirme', $originalSlug);
+                $sheet['firme'] = $fresh['firme'] ?? $sheet['firme'];
+                $app->storage->save('fogliofirme', $slug, $sheet);
+                $app->storage->delete('fogliofirme', $originalSlug);
+            } else {
+                // sotto lock: una firma arrivata mentre si salvava non va persa
+                $app->storage->update('fogliofirme', $slug, function ($d) use ($sheet) {
+                    $sheet['firme'] = $d['firme'] ?? $sheet['firme'];
+                    return $sheet;
+                });
+            }
+            ocms_flash_set('success', 'FoglioFirme salvato');
+            ocms_redirect(ocms_base_url() . '/admin/fogliofirme/edit/' . $slug);
+        });
+
+        $this->router->post('/fogliofirme/delete/{slug}', function ($params) use ($app) {
+            $app->auth->requireRole('administrator');
+            if (!ocms_csrf_verify()) { ocms_flash_set('error', 'CSRF'); ocms_redirect(ocms_base_url() . '/admin/fogliofirme'); }
+            $app->storage->delete('fogliofirme', $params['slug']);
+            ocms_flash_set('success', 'FoglioFirme eliminato');
+            ocms_redirect(ocms_base_url() . '/admin/fogliofirme');
+        });
+
+        $this->router->post('/fogliofirme/toggle/{slug}', function ($params) use ($app) {
+            $app->auth->requireRole('administrator');
+            if (!ocms_csrf_verify()) { ocms_flash_set('error', 'CSRF'); ocms_redirect(ocms_base_url() . '/admin/fogliofirme'); }
+            $sheet = $app->storage->update('fogliofirme', basename($params['slug']), function ($d) {
+                if (!$d) return null;
+                $d['status'] = (($d['status'] ?? 'open') === 'open') ? 'closed' : 'open';
+                $d['updated_at'] = ocms_now();
+                return $d;
+            });
+            if ($sheet) {
+                ocms_flash_set('success', $sheet['status'] === 'open' ? 'Firme riaperte' : 'Firme chiuse');
+            }
+            ocms_redirect(ocms_base_url() . '/admin/fogliofirme');
+        });
+
+        $this->router->get('/fogliofirme/firme/{slug}', function ($params) use ($app) {
+            $app->auth->requireRole('administrator');
+            $sheet = $app->storage->find('fogliofirme', $params['slug']);
+            if (!$sheet) { ocms_flash_set('error', 'FoglioFirme non trovato'); ocms_redirect(ocms_base_url() . '/admin/fogliofirme'); }
+            $app->renderAdmin('fogliofirme/firme', ['sheet' => $sheet]);
+        });
+
+        $this->router->post('/fogliofirme/firme/{slug}/delete/{id}', function ($params) use ($app) {
+            $app->auth->requireRole('administrator');
+            if (!ocms_csrf_verify()) { ocms_flash_set('error', 'CSRF'); ocms_redirect(ocms_base_url() . '/admin/fogliofirme'); }
+            $sheet = $app->storage->update('fogliofirme', basename($params['slug']), function ($d) use ($params) {
+                if (!$d) return null;
+                $d['firme'] = array_values(array_filter($d['firme'] ?? [], fn($f) => ($f['id'] ?? '') !== $params['id']));
+                $d['updated_at'] = ocms_now();
+                return $d;
+            });
+            if ($sheet) {
+                ocms_flash_set('success', 'Firma rimossa');
+            }
+            ocms_redirect(ocms_base_url() . '/admin/fogliofirme/firme/' . $params['slug']);
+        });
+
+        $this->router->get('/fogliofirme/export/{slug}', function ($params) use ($app) {
+            $app->auth->requireRole('administrator');
+            $sheet = $app->storage->find('fogliofirme', $params['slug']);
+            if (!$sheet) { ocms_flash_set('error', 'FoglioFirme non trovato'); ocms_redirect(ocms_base_url() . '/admin/fogliofirme'); }
+            $filename = 'firme-' . $sheet['slug'] . '-' . date('Ymd-His') . '.csv';
+            header('Content-Type: text/csv; charset=utf-8');
+            header('Content-Disposition: attachment; filename="' . $filename . '"');
+            $out = fopen('php://output', 'w');
+            fprintf($out, "\xEF\xBB\xBF");
+            fputcsv($out, ['#', 'Nome', 'Cognome', 'Email', 'Data firma', 'Ora'], ';', '"', '\\');
+            $i = 1;
+            foreach (($sheet['firme'] ?? []) as $f) {
+                $dt = !empty($f['signed_at']) ? ocms_format_date($f['signed_at'], 'd/m/Y') : '';
+                $tm = !empty($f['signed_at']) ? ocms_format_date($f['signed_at'], 'H:i:s') : '';
+                fputcsv($out, array_map('ocms_csv_safe', [$i++, $f['nome'] ?? '', $f['cognome'] ?? '', $f['email'] ?? '', $dt, $tm]), ';', '"', '\\');
+            }
+            fclose($out);
+            exit;
+        });
+
         // ─── FORM BUILDER ───
 
         $this->router->get('/forms', function () use ($app) {
@@ -2246,21 +2867,51 @@ HTML;
             $app->auth->requireRole('editor');
             header('Content-Type: application/json');
             $input = json_decode(file_get_contents('php://input'), true);
-            if (empty($_SESSION['_csrf_token']) || empty($input['_csrf_token']) || !hash_equals($_SESSION['_csrf_token'], $input['_csrf_token'])) {
+            if (!ocms_csrf_check($input['_csrf_token'] ?? null)) {
                 http_response_code(403); echo json_encode(['error' => 'CSRF']); return;
             }
             $slug = ocms_slug($input['name'] ?? 'form');
+            if ($slug === '') { echo json_encode(['error' => 'Nome del form non valido']); return; }
+            $id = (string)($input['id'] ?? '');
+
+            // Il form esistente si riconosce dall'id: le compilazioni raccolte
+            // vanno conservate (l'editor non le rimanda mai indietro)
+            $existing = null;
+            if ($id !== '') {
+                foreach ($app->storage->findAll('forms') as $f) {
+                    if (($f['id'] ?? '') === $id) { $existing = $f; break; }
+                }
+            }
+            $clash = $app->storage->find('forms', $slug);
+            // Form vecchi con id vuoto: l'editor manda lo slug originale, che identifica
+            // il form anche quando l'id manca
+            $origSlug = basename((string)($input['original_slug'] ?? ''));
+            if (!$existing && $origSlug !== '') {
+                $existing = $app->storage->find('forms', $origSlug);
+            }
+            if ($clash && ($clash['id'] ?? '') !== ($existing['id'] ?? ($id !== '' ? $id : '__nuovo__'))) {
+                echo json_encode(['error' => 'Esiste già un altro form con questo nome']); return;
+            }
+
             $form = [
-                'id' => $input['id'] ?? ocms_uuid(),
+                'id' => !empty($existing['id']) ? $existing['id'] : ($id !== '' ? $id : ocms_uuid()),
                 'name' => trim($input['name'] ?? ''),
                 'slug' => $slug,
                 'fields' => $input['fields'] ?? [],
                 'settings' => $input['settings'] ?? ['notify_email' => '', 'success_message' => 'Grazie! Il modulo è stato inviato.', 'submit_label' => 'Invia'],
-                'submissions' => $input['submissions'] ?? [],
-                'created_at' => $input['created_at'] ?? ocms_now(),
+                'created_at' => $existing['created_at'] ?? ($input['created_at'] ?? ocms_now()),
                 'updated_at' => ocms_now(),
             ];
-            $app->storage->save('forms', $slug, $form);
+            $oldSlug = $existing['slug'] ?? null;
+            // Le compilazioni si rileggono sotto lock, così non si perde
+            // un invio arrivato mentre si salvava il form
+            $app->storage->update('forms', $slug, function ($d) use ($form, $existing, $oldSlug, $slug) {
+                $subs = ($oldSlug && $oldSlug !== $slug) ? ($existing['submissions'] ?? []) : ($d['submissions'] ?? ($existing['submissions'] ?? []));
+                return $form + ['submissions' => $subs];
+            });
+            if ($oldSlug && $oldSlug !== $slug) {
+                $app->storage->delete('forms', $oldSlug);
+            }
             echo json_encode(['success' => true, 'slug' => $slug]);
         });
 
@@ -2279,7 +2930,7 @@ HTML;
             ocms_redirect(ocms_base_url() . '/admin/forms');
         });
 
-        // ─── LESSONS ───
+        // ─── LEZIONI ───
 
         $this->router->get('/lessons', function () use ($app) {
             $app->auth->requireRole('editor');
@@ -2309,60 +2960,78 @@ HTML;
                 ocms_redirect(ocms_base_url() . '/admin/lessons');
             }
 
-            $isNew = empty($_POST['original_slug']);
-            $slug = ocms_slug($_POST['slug'] ?: $_POST['title']);
-            $originalSlug = $_POST['original_slug'] ?? '';
+            $originalSlug = basename((string)($_POST['original_slug'] ?? ''));
+            $isNew = $originalSlug === '';
+            $wanted = ocms_slug(trim((string)($_POST['slug'] ?? '')) ?: (string)($_POST['title'] ?? ''));
+            if ($wanted === '') {
+                ocms_flash_set('error', 'Serve un titolo o uno slug');
+                ocms_redirect(ocms_base_url() . '/admin/lessons' . ($isNew ? '/new' : '/edit/' . $originalSlug));
+            }
+            $existingLesson = $isNew ? null : $app->storage->find('lessons', $originalSlug);
+            if (!$isNew && !$existingLesson) {
+                ocms_flash_set('error', 'Lezione originale non trovata: è stata eliminata o rinominata nel frattempo?');
+                ocms_redirect(ocms_base_url() . '/admin/lessons');
+            }
+            // Mai sovrascrivere un'altra lezione (né mescolarne i file)
+            $slug = ocms_unique_slug($app->storage, 'lessons', $wanted, $originalSlug);
+            while ($slug !== $originalSlug && is_dir(ocms_base_path() . '/uploads/lezioni/' . $slug)
+                   && !$app->storage->exists('lessons', $slug)) {
+                // cartella orfana con lo stesso nome: si sceglie un altro slug
+                $slug = ocms_unique_slug($app->storage, 'lessons', $slug . '-2', $originalSlug);
+            }
+            if ($slug !== $wanted) {
+                ocms_flash_set('warning', 'Lo slug era già usato: lezione salvata come "' . $slug . '"');
+            }
 
             $uploadDir = ocms_base_path() . '/uploads/lezioni/' . $slug;
 
-            // If the slug changed, rename the folder and delete the old JSON
-            if (!$isNew && $originalSlug && $originalSlug !== $slug) {
+            // Se lo slug è cambiato, la cartella dei file segue la lezione
+            if (!$isNew && $originalSlug !== $slug) {
                 $oldDir = ocms_base_path() . '/uploads/lezioni/' . $originalSlug;
-                if (is_dir($oldDir)) {
-                    rename($oldDir, $uploadDir);
+                if (is_dir($oldDir) && !file_exists($uploadDir) && !@rename($oldDir, $uploadDir)) {
+                    ocms_flash_set('error', 'Impossibile rinominare la cartella dei file della lezione');
+                    ocms_redirect(ocms_base_url() . '/admin/lessons/edit/' . $originalSlug);
                 }
-                $app->storage->delete('lessons', $originalSlug);
             }
 
-            // Create the folder if it doesn't exist
+            // Crea la cartella se non esiste
             if (!is_dir($uploadDir)) {
-                mkdir($uploadDir, 0775, true);
-                chown($uploadDir, 'www-data');
+                @mkdir($uploadDir, 0775, true);
             }
 
-            // Handle multiple file uploads
+            // Gestisci upload file multipli
             if (!empty($_FILES['files']['name'][0])) {
                 foreach ($_FILES['files']['name'] as $i => $name) {
                     if ($_FILES['files']['error'][$i] !== UPLOAD_ERR_OK) continue;
-                    $safeName = preg_replace('/[^a-zA-Z0-9._-]/', '_', $name);
+                    $safeName = ocms_lesson_safe_name($name);
+                    if ($safeName === '') {
+                        ocms_flash_set('error', 'File non caricato (nome non valido): ' . basename($name));
+                        continue;
+                    }
                     move_uploaded_file($_FILES['files']['tmp_name'][$i], $uploadDir . '/' . $safeName);
                 }
             }
 
-            $tags = array_filter(array_map('trim', explode(',', $_POST['tags'] ?? '')));
+            $tags = array_values(array_filter(array_map('trim', explode(',', $_POST['tags'] ?? ''))));
 
-            // Preserve view count from the existing lesson
-            $existingViews = 0;
-            if (!$isNew) {
-                $existingLesson = $app->storage->find('lessons', $originalSlug ?: $slug);
-                if ($existingLesson) $existingViews = $existingLesson['views'] ?? 0;
-            }
-
-            $lesson = [
-                'id' => $_POST['id'] ?: ocms_uuid(),
-                'title' => trim($_POST['title']),
+            $lesson = array_merge($existingLesson ?? [], [
+                'id' => $existingLesson['id'] ?? (($_POST['id'] ?? '') ?: ocms_uuid()),
+                'title' => trim((string)($_POST['title'] ?? '')),
                 'slug' => $slug,
                 'description' => trim($_POST['description'] ?? ''),
                 'tags' => $tags,
-                'main_file' => trim($_POST['main_file'] ?? ''),
-                'status' => $_POST['status'] ?? 'draft',
-                'author' => $app->auth->user()['username'],
-                'created_at' => $_POST['created_at'] ?: ocms_now(),
+                'main_file' => basename(trim((string)($_POST['main_file'] ?? ''))),
+                'status' => in_array($_POST['status'] ?? '', ['draft', 'published'], true) ? $_POST['status'] : 'draft',
+                'author' => $existingLesson['author'] ?? $app->auth->user()['username'],
+                'created_at' => $existingLesson['created_at'] ?? (($_POST['created_at'] ?? '') ?: ocms_now()),
                 'updated_at' => ocms_now(),
-                'views' => $existingViews,
-            ];
+                'views' => $existingLesson['views'] ?? 0,
+            ]);
 
             $app->storage->save('lessons', $slug, $lesson);
+            if (!$isNew && $originalSlug !== $slug) {
+                $app->storage->delete('lessons', $originalSlug);
+            }
             ocms_flash_set('success', $isNew ? 'Lezione creata!' : 'Lezione aggiornata!');
             ocms_redirect(ocms_base_url() . '/admin/lessons/edit/' . $slug);
         });
@@ -2373,22 +3042,30 @@ HTML;
                 ocms_flash_set('error', 'CSRF');
                 ocms_redirect(ocms_base_url() . '/admin/lessons');
             }
-            // Delete lesson files directory
-            $dir = ocms_base_path() . '/uploads/lezioni/' . $params['slug'];
-            if (is_dir($dir)) {
-                $files = glob($dir . '/*');
-                foreach ($files as $f) { if (is_file($f)) unlink($f); }
-                rmdir($dir);
+            $slug = basename($params['slug']);
+            // Elimina la cartella dei file, sottocartelle comprese
+            if ($slug !== '' && $slug !== '.' && $slug !== '..') {
+                ocms_rmdir_recursive(ocms_base_path() . '/uploads/lezioni/' . $slug);
             }
-            $app->storage->delete('lessons', $params['slug']);
+            $app->storage->delete('lessons', $slug);
             ocms_flash_set('success', 'Lezione eliminata');
             ocms_redirect(ocms_base_url() . '/admin/lessons');
         });
 
-        // Upload lesson files (AJAX)
+        // Upload file lezione (AJAX)
         $this->router->post('/lessons/upload-files/{slug}', function ($params) use ($app) {
             $app->auth->requireRole('editor');
             header('Content-Type: application/json');
+            if (ocms_upload_too_big()) {
+                http_response_code(413);
+                echo json_encode(['error' => 'File troppo grande per il server (limite ' . ini_get('post_max_size') . ')']);
+                return;
+            }
+            if (!ocms_csrf_verify_request()) {
+                http_response_code(403);
+                echo json_encode(['error' => 'Token di sicurezza non valido: ricarica la pagina']);
+                return;
+            }
 
             $lesson = $app->storage->find('lessons', $params['slug']);
             if (!$lesson) {
@@ -2401,25 +3078,34 @@ HTML;
             if (!is_dir($uploadDir)) mkdir($uploadDir, 0775, true);
 
             $uploaded = [];
+            $rejected = [];
             if (!empty($_FILES['files']['name'][0])) {
                 foreach ($_FILES['files']['name'] as $i => $name) {
                     if ($_FILES['files']['error'][$i] !== UPLOAD_ERR_OK) continue;
-                    $safeName = preg_replace('/[^a-zA-Z0-9._-]/', '_', $name);
+                    $safeName = ocms_lesson_safe_name($name);
+                    if ($safeName === '') {
+                        $rejected[] = basename($name);
+                        continue;
+                    }
                     $destPath = $uploadDir . '/' . $safeName;
                     if (move_uploaded_file($_FILES['files']['tmp_name'][$i], $destPath)) {
-                        @chown($destPath, 'www-data');
                         $uploaded[] = $safeName;
                     }
                 }
             }
 
-            echo json_encode(['success' => true, 'files' => $uploaded]);
+            echo json_encode(['success' => true, 'files' => $uploaded, 'rejected' => $rejected]);
         });
 
-        // Delete lesson file (AJAX)
+        // Elimina file lezione (AJAX)
         $this->router->post('/lessons/delete-file/{slug}', function ($params) use ($app) {
             $app->auth->requireRole('editor');
             header('Content-Type: application/json');
+            if (!ocms_csrf_verify_request()) {
+                http_response_code(403);
+                echo json_encode(['error' => 'Token di sicurezza non valido: ricarica la pagina']);
+                return;
+            }
 
             $input = json_decode(file_get_contents('php://input'), true);
             $fileName = basename($input['file'] ?? '');
@@ -2438,22 +3124,22 @@ HTML;
             }
         });
 
-        // ─── QUIZZES (admin) ───
+        // ─── QUIZ ───
 
-        // List quizzes
+        // Lista quiz
         $this->router->get('/quizzes', function () use ($app) {
             $app->auth->requireRole('editor');
             $quizzes = $app->storage->findAll('quizzes', null, 'created_at', 'desc');
             $app->renderAdmin('quizzes/index', ['quizzes' => $quizzes]);
         });
 
-        // New quiz
+        // Nuovo quiz
         $this->router->get('/quizzes/new', function () use ($app) {
             $app->auth->requireRole('editor');
             $app->renderAdmin('quizzes/edit', ['quiz' => null]);
         });
 
-        // Edit quiz
+        // Modifica quiz
         $this->router->get('/quizzes/edit/{slug}', function ($params) use ($app) {
             $app->auth->requireRole('editor');
             $quiz = $app->storage->find('quizzes', $params['slug']);
@@ -2464,7 +3150,7 @@ HTML;
             $app->renderAdmin('quizzes/edit', ['quiz' => $quiz]);
         });
 
-        // Save quiz
+        // Salva quiz
         $this->router->post('/quizzes/save', function () use ($app) {
             $app->auth->requireRole('editor');
             if (!ocms_csrf_verify()) {
@@ -2482,7 +3168,7 @@ HTML;
 
             $existingQuiz = !$isNew ? $app->storage->find('quizzes', $originalSlug ?: $slug) : null;
 
-            // Process questions
+            // Processa domande
             $questions = [];
             if (!empty($_POST['questions']) && is_array($_POST['questions'])) {
                 foreach ($_POST['questions'] as $q) {
@@ -2515,7 +3201,7 @@ HTML;
                 'updated_at' => ocms_now(),
             ];
 
-            // Auto-generate access code if empty
+            // Auto-genera codice accesso se vuoto
             if (empty($quiz['settings']['access_code'])) {
                 $quiz['settings']['access_code'] = str_pad(random_int(0, 9999), 4, '0', STR_PAD_LEFT);
             }
@@ -2525,7 +3211,7 @@ HTML;
             ocms_redirect(ocms_base_url() . '/admin/quizzes/edit/' . $slug);
         });
 
-        // Delete quiz
+        // Elimina quiz
         $this->router->post('/quizzes/delete/{slug}', function ($params) use ($app) {
             $app->auth->requireRole('editor');
             if (!ocms_csrf_verify()) {
@@ -2538,7 +3224,7 @@ HTML;
                 ocms_redirect(ocms_base_url() . '/admin/quizzes');
                 return;
             }
-            // Also delete associated quiz results
+            // Elimina anche i risultati
             $results = $app->storage->findAll('quiz-results', fn($r) => ($r['quiz_slug'] ?? '') === $params['slug']);
             foreach ($results as $r) {
                 $app->storage->delete('quiz-results', $r['id']);
@@ -2548,7 +3234,7 @@ HTML;
             ocms_redirect(ocms_base_url() . '/admin/quizzes');
         });
 
-        // Quiz results listing
+        // Risultati quiz
         $this->router->get('/quizzes/results/{slug}', function ($params) use ($app) {
             $app->auth->requireRole('editor');
             $quiz = $app->storage->find('quizzes', $params['slug']);
@@ -2557,12 +3243,12 @@ HTML;
                 ocms_redirect(ocms_base_url() . '/admin/quizzes');
             }
             $results = $app->storage->findAll('quiz-results', fn($r) => ($r['quiz_slug'] ?? '') === $params['slug']);
-            // Sort by submission date descending
+            // Ordina per data di invio desc
             usort($results, fn($a, $b) => strcmp($b['submitted_at'] ?? '', $a['submitted_at'] ?? ''));
             $app->renderAdmin('quizzes/results', ['quiz' => $quiz, 'results' => $results]);
         });
 
-        // Delete a single quiz result
+        // Elimina singolo risultato
         $this->router->post('/quizzes/delete-result/{id}', function ($params) use ($app) {
             $app->auth->requireRole('editor');
             if (!ocms_csrf_verify()) {
@@ -2582,7 +3268,7 @@ HTML;
             }
         });
 
-        // Send quiz result report via email
+        // Invia risultato quiz via email
         $this->router->post('/quizzes/send-result/{id}', function ($params) use ($app) {
             $app->auth->requireRole('editor');
             if (!ocms_csrf_verify()) {
@@ -2613,7 +3299,7 @@ HTML;
                 return;
             }
 
-            // Build the HTML email report
+            // Costruisci report HTML
             $studentName = ocms_escape($result['student']['name'] ?? 'Studente');
             $studentClass = ocms_escape($result['student']['class'] ?? '');
             $score = round($result['score'] ?? 0, 1);
@@ -2698,7 +3384,7 @@ HTML;
             $sent = ocms_send_mail($email, $subject, $htmlBody);
 
             if ($sent) {
-                // Save the email sent timestamp in the result
+                // Salva data/ora invio nel risultato
                 $result['email_sent_at'] = date('c');
                 $app->storage->save('quiz-results', $result['id'], $result);
                 ocms_flash_set('success', 'Report inviato a ' . $email);
@@ -2708,7 +3394,7 @@ HTML;
             ocms_redirect(ocms_base_url() . '/admin/quizzes/results/' . $quizSlug);
         });
 
-        // Export quiz results as CSV
+        // Esporta CSV risultati
         $this->router->get('/quizzes/export-csv/{slug}', function ($params) use ($app) {
             $app->auth->requireRole('editor');
             $quiz = $app->storage->find('quizzes', $params['slug']);
@@ -2721,7 +3407,7 @@ HTML;
 
             header('Content-Type: text/csv; charset=UTF-8');
             header('Content-Disposition: attachment; filename="Risultati_' . $params['slug'] . '_' . date('Y-m-d') . '.csv"');
-            // UTF-8 BOM for Excel compatibility
+            // BOM per Excel
             echo "\xEF\xBB\xBF";
             echo "Nome,Classe,Voto,Corrette,Errate,Saltate,Tempo (sec),Tempo (mm:ss),Data\n";
             foreach ($results as $r) {
@@ -2740,15 +3426,14 @@ HTML;
                     (string)($r['submitted_at'] ?? ''),
                 ];
                 echo implode(',', array_map(function(string $f) {
-                    $f = str_replace('"', '""', $f);
+                    $f = str_replace('"', '""', ocms_csv_safe($f));
                     return '"' . $f . '"';
                 }, $fields)) . "\n";
             }
         });
 
-        // ─── GALLERIES ───
+        // ─── GALLERIE ───
 
-        // List all galleries
         $this->router->get('/galleries', function () use ($app) {
             $app->auth->requireRole('editor');
             $galleries = $app->storage->findAll('galleries', null, 'updated_at', 'desc');
@@ -2791,7 +3476,7 @@ HTML;
             $slug = ocms_slug($_POST['slug'] ?: $_POST['title']);
             $originalSlug = $_POST['original_slug'] ?? '';
 
-            // If the slug changed, rename the directory and delete the old JSON file
+            // Se lo slug e' cambiato, rinomina la directory e elimina il vecchio JSON
             if (!$isNew && $originalSlug && $originalSlug !== $slug) {
                 $oldDir = ocms_base_path() . '/uploads/gallery/' . $originalSlug;
                 $newDir = ocms_base_path() . '/uploads/gallery/' . $slug;
@@ -2799,16 +3484,16 @@ HTML;
                 $app->storage->delete('galleries', $originalSlug);
             }
 
-            // Create gallery directory
+            // Crea directory
             $galleryDir = ocms_base_path() . '/uploads/gallery/' . $slug;
             if (!is_dir($galleryDir)) mkdir($galleryDir, 0755, true);
 
             $existingGallery = !$isNew ? $app->storage->find('galleries', $originalSlug ?: $slug) : null;
 
-            // Parse images from the hidden JSON field
+            // Processa immagini dal JSON nascosto
             $images = json_decode($_POST['images'] ?? '[]', true) ?: [];
 
-            // Tags
+            // Tag
             $tags = array_filter(array_map('trim', explode(',', $_POST['tags'] ?? '')));
 
             $gallery = [
@@ -2837,7 +3522,7 @@ HTML;
                 ocms_redirect(ocms_base_url() . '/admin/galleries');
                 return;
             }
-            // Delete the gallery image directory
+            // Elimina directory immagini
             $dir = ocms_base_path() . '/uploads/gallery/' . basename($params['slug']);
             if (is_dir($dir)) {
                 $files = new RecursiveIteratorIterator(
@@ -2854,10 +3539,20 @@ HTML;
             ocms_redirect(ocms_base_url() . '/admin/galleries');
         });
 
-        // Upload images via AJAX
+        // Upload immagini (AJAX)
         $this->router->post('/galleries/upload-images/{slug}', function ($params) use ($app) {
             $app->auth->requireRole('editor');
             header('Content-Type: application/json');
+            if (ocms_upload_too_big()) {
+                http_response_code(413);
+                echo json_encode(['error' => 'File troppo grande per il server (limite ' . ini_get('post_max_size') . ')']);
+                return;
+            }
+            if (!ocms_csrf_verify_request()) {
+                http_response_code(403);
+                echo json_encode(['error' => 'Token di sicurezza non valido: ricarica la pagina']);
+                return;
+            }
 
             $slug = basename($params['slug']);
             $dir = ocms_base_path() . '/uploads/gallery/' . $slug;
@@ -2892,10 +3587,10 @@ HTML;
             $fullPath = $dir . '/' . $filename;
             $thumbPath = $dir . '/thumb_' . $filename;
 
-            // Save and resize the uploaded image
+            // Salva e ridimensiona
             move_uploaded_file($file['tmp_name'], $fullPath);
 
-            // Generate thumbnail (max 400px)
+            // Genera thumbnail (max 400px)
             if (function_exists('imagecreatefromjpeg')) {
                 ocms_resize_cover($fullPath, $thumbPath, 400, 400);
             } else {
@@ -2912,10 +3607,15 @@ HTML;
             ]);
         });
 
-        // Delete a single image via AJAX
+        // Elimina singola immagine (AJAX)
         $this->router->post('/galleries/delete-image/{slug}', function ($params) use ($app) {
             $app->auth->requireRole('editor');
             header('Content-Type: application/json');
+            if (!ocms_csrf_verify_request()) {
+                http_response_code(403);
+                echo json_encode(['error' => 'Token di sicurezza non valido: ricarica la pagina']);
+                return;
+            }
 
             $input = json_decode(file_get_contents('php://input'), true);
             $filename = basename($input['filename'] ?? '');
@@ -2934,7 +3634,6 @@ HTML;
 
         // ─── PACKAGE ───
 
-        // Build a distributable package
         $this->router->post('/package/build', function () use ($app) {
             $app->auth->requireRole('super_administrator');
             require ocms_base_path() . '/admin/views/package/build.php';
@@ -2942,7 +3641,6 @@ HTML;
 
         // ─── BACKUP ───
 
-        // List available backups
         $this->router->get('/backup', function () use ($app) {
             $app->auth->requireRole('super_administrator');
             $backupDir = ocms_data_path('backups');
@@ -2956,7 +3654,7 @@ HTML;
             $app->renderAdmin('backup/index', ['backups' => $backups]);
         });
 
-        // Data-only backup (fast)
+        // Backup solo dati (veloce)
         $this->router->post('/backup/create', function () use ($app) {
             $app->auth->requireRole('super_administrator');
             if (!ocms_csrf_verify()) { ocms_flash_set('error', 'CSRF'); ocms_redirect(ocms_base_url() . '/admin/backup'); }
@@ -2999,7 +3697,7 @@ HTML;
             ocms_redirect(ocms_base_url() . '/admin/backup');
         });
 
-        // Full backup (entire site + installer.php)
+        // Backup COMPLETO (tutto il sito + installer.php)
         $this->router->post('/backup/full', function () use ($app) {
             $app->auth->requireRole('super_administrator');
             if (!ocms_csrf_verify()) { ocms_flash_set('error', 'CSRF'); ocms_redirect(ocms_base_url() . '/admin/backup'); }
@@ -3015,7 +3713,7 @@ HTML;
                 ocms_redirect(ocms_base_url() . '/admin/backup');
             }
 
-            // Add the entire site (excluding backups and cache)
+            // Aggiungi TUTTO il sito (escluso backups e cache)
             $baseDir = ocms_base_path();
             $iterator = new RecursiveIteratorIterator(
                 new RecursiveDirectoryIterator($baseDir, RecursiveDirectoryIterator::SKIP_DOTS),
@@ -3023,13 +3721,13 @@ HTML;
             );
             foreach ($iterator as $file) {
                 $rel = substr($file->getPathname(), strlen($baseDir) + 1);
-                // Exclude backups, cache, and temporary files
+                // Escludi backup, cache, e file temporanei
                 if (str_starts_with($rel, 'data/backups/') || str_starts_with($rel, 'data/cache/')) continue;
                 if (str_ends_with($rel, '.tmp')) continue;
                 $zip->addFile($file->getPathname(), 'ocms/' . $rel);
             }
 
-            // Add installer.php at the ZIP root
+            // Aggiungi installer.php nella root dello ZIP
             $installerPath = ocms_base_path() . '/core/installer-template.php';
             if (file_exists($installerPath)) {
                 $zip->addFile($installerPath, 'installer.php');
@@ -3040,7 +3738,7 @@ HTML;
             ocms_redirect(ocms_base_url() . '/admin/backup');
         });
 
-        // Distributable package (empty CMS + installer, no personal data)
+        // Pacchetto distribuibile (CMS vuoto + installer, senza dati personali)
         $this->router->post('/backup/distributable', function () use ($app) {
             $app->auth->requireRole('super_administrator');
             if (!ocms_csrf_verify()) { ocms_flash_set('error', 'CSRF'); ocms_redirect(ocms_base_url() . '/admin/backup'); return; }
@@ -3061,10 +3759,11 @@ HTML;
             $prefix = 'ocms/';
             $fileCount = 0;
 
-            // Exclusions: user data, generated files, development artifacts
+            // Esclusioni: dati personali, tema personale, file specifici
             $excludePatterns = [
                 'data/', 'uploads/', 'install.php', 'sitemap.xml', 'robots.txt',
-                'ARCHITECTURE.md', 'ROADMAP.md', 'admin/views/package/', 'ocms-latest.zip',
+                'ARCHITECTURE.md', 'ROADMAP.md', 'core/installer-template.php',
+                'themes/ivan/', 'admin/views/package/', 'ocms-latest.zip',
                 'ocms-installer.php', '.git/', '.claude/',
             ];
 
@@ -3076,7 +3775,7 @@ HTML;
                 return false;
             };
 
-            // Recursively scan main directories
+            // Scansione ricorsiva delle directory principali
             $topDirs = ['core', 'admin', 'themes'];
             foreach ($topDirs as $dir) {
                 $fullDir = $baseDir . '/' . $dir;
@@ -3094,7 +3793,7 @@ HTML;
                 }
             }
 
-            // Root files
+            // File root
             foreach (['.htaccess', 'index.php'] as $rootFile) {
                 $full = $baseDir . '/' . $rootFile;
                 if (file_exists($full)) {
@@ -3103,7 +3802,7 @@ HTML;
                 }
             }
 
-            // Data: empty directory structure + base layout + .htaccess
+            // Data: solo struttura vuota + layout base + .htaccess
             $zip->addEmptyDir($prefix . 'data');
             $zip->addFromString($prefix . 'data/.htaccess', "Deny from all\n");
             $fileCount++;
@@ -3115,7 +3814,7 @@ HTML;
                 $zip->addEmptyDir($prefix . 'data/' . $d);
             }
 
-            // Base layout
+            // Layout base
             $layoutFile = $baseDir . '/data/layouts/base.json';
             if (file_exists($layoutFile)) {
                 $zip->addEmptyDir($prefix . 'data/layouts');
@@ -3123,16 +3822,16 @@ HTML;
                 $fileCount++;
             }
 
-            // Uploads: directory structure only
+            // Uploads: solo struttura
             foreach (['uploads','uploads/covers','uploads/documents','uploads/gallery',
                 'uploads/images','uploads/media','uploads/lezioni'] as $d) {
                 $zip->addEmptyDir($prefix . $d);
             }
 
-            // Extensions and plugins
+            // Extensions e plugins
             $zip->addEmptyDir($prefix . 'extensions');
 
-            // Clean default configuration
+            // Config pulito
             $cleanConfig = json_encode([
                 'site_name' => 'O-CMS',
                 'site_description' => 'A lightweight flat-file CMS',
@@ -3154,7 +3853,7 @@ HTML;
             $zip->addFromString($prefix . 'data/config.json', $cleanConfig);
             $fileCount++;
 
-            // Default menu
+            // Menu default
             $defaultMenu = json_encode([
                 'name' => 'main', 'label' => 'Menu Principale',
                 'items' => [
@@ -3165,7 +3864,7 @@ HTML;
             $zip->addFromString($prefix . 'data/menus/main.json', $defaultMenu);
             $fileCount++;
 
-            // Default homepage
+            // Home default
             $defaultHome = json_encode([
                 'title'=>'Benvenuto','slug'=>'home',
                 'content'=>'<h2>Il tuo nuovo sito è pronto</h2><p>Inizia a personalizzarlo dal <a href="/admin/">pannello di amministrazione</a>.</p>',
@@ -3177,7 +3876,7 @@ HTML;
             $zip->addFromString($prefix . 'data/pages/home.json', $defaultHome);
             $fileCount++;
 
-            // Installer at the ZIP root
+            // Installer nella root dello ZIP
             $installerPath = $baseDir . '/core/installer-template.php';
             if (file_exists($installerPath)) {
                 $zip->addFile($installerPath, 'installer.php');
@@ -3219,7 +3918,7 @@ HTML;
             $zip = new ZipArchive();
             if ($zip->open($file) !== true) { ocms_flash_set('error', 'ZIP non valido'); ocms_redirect(ocms_base_url() . '/admin/backup'); }
 
-            // Safe extraction with path traversal prevention
+            // Estrazione sicura con path traversal prevention
             $destBase = ocms_base_path();
             for ($i = 0; $i < $zip->numFiles; $i++) {
                 $name = $zip->getNameIndex($i);
@@ -3236,16 +3935,16 @@ HTML;
             ocms_redirect(ocms_base_url() . '/admin/backup');
         });
 
-        // ─── SEARCH ───
+        // ─── RICERCA ───
 
-        // Quick AJAX search (sidebar)
+        // Ricerca rapida AJAX (sidebar)
         $this->router->get('/search', function () use ($app) {
             $app->auth->requireRole('editor');
             header('Content-Type: application/json');
             $q = trim($_GET['q'] ?? '');
             $engine = new SearchEngine($app);
             $result = $engine->quickSearch($q);
-            // Format results for the sidebar
+            // Formatta per la sidebar
             $formatted = array_map(fn($r) => [
                 'type' => $r['type'],
                 'title' => $r['highlights']['title'] ?? $r['title'],
@@ -3257,7 +3956,7 @@ HTML;
             echo json_encode(['results' => $formatted, 'query' => $q, 'total' => $result['total']]);
         });
 
-        // Advanced search page
+        // Pagina ricerca avanzata
         $this->router->get('/search/full', function () use ($app) {
             $app->auth->requireRole('editor');
             $engine = new SearchEngine($app);
@@ -3301,7 +4000,7 @@ HTML;
             ]);
         });
 
-        // AJAX search suggestions
+        // Suggerimenti AJAX
         $this->router->get('/search/suggest', function () use ($app) {
             $app->auth->requireRole('editor');
             header('Content-Type: application/json');
@@ -3309,9 +4008,9 @@ HTML;
             echo json_encode($engine->suggest(trim($_GET['q'] ?? '')));
         });
 
-        // ─── REST API ───
+        // ─── API REST ───
 
-        // --- Read endpoints (registered+) ---
+        // --- Lettura (registered+) ---
 
         $this->router->get('/api/pages', function () use ($app) {
             $user = $this->apiAuth($app);
@@ -3335,7 +4034,7 @@ HTML;
             header('Content-Type: application/json');
             echo json_encode($app->storage->findAll('articles', function ($a) {
                 if ($a['status'] !== 'published') return false;
-                if (!empty($a['publish_at']) && $a['publish_at'] > date('c')) return false;
+                if (ocms_is_future($a['publish_at'] ?? '')) return false;
                 return true;
             }));
         });
@@ -3346,7 +4045,7 @@ HTML;
             header('Content-Type: application/json');
             $article = $app->storage->find('articles', $params['slug']);
             if (!$article || $article['status'] !== 'published') { http_response_code(404); echo json_encode(['error' => 'Not found']); return; }
-            if (!empty($article['publish_at']) && $article['publish_at'] > date('c')) { http_response_code(404); echo json_encode(['error' => 'Not found']); return; }
+            if (ocms_is_future($article['publish_at'] ?? '')) { http_response_code(404); echo json_encode(['error' => 'Not found']); return; }
             echo json_encode($article);
         });
 
@@ -3378,11 +4077,12 @@ HTML;
             $this->apiRequireRole($user, 'registered');
             header('Content-Type: application/json');
             $safe = $app->config;
-            unset($safe['seo_global'], $safe['smtp']);
+            // niente segreti: SMTP, chiavi IA, script e codice iniettato
+            unset($safe['seo_global'], $safe['smtp'], $safe['ai'], $safe['ai_cli_script'], $safe['installation_notified'], $safe['app_secret']);
             echo json_encode($safe);
         });
 
-        // --- Articles CRUD (publisher+) ---
+        // --- Articoli CRUD (publisher+) ---
 
         $this->router->post('/api/articles', function () use ($app) {
             $user = $this->apiAuth($app);
@@ -3394,11 +4094,16 @@ HTML;
                 echo json_encode(['error' => 'Campo title obbligatorio']);
                 return;
             }
-            $slug = ocms_slug($input['slug'] ?? $input['title']);
-            $publishAt = '';
-            if (!empty($input['publish_at'])) {
-                $publishAt = (new DateTime($input['publish_at']))->format('c');
+            $slug = ocms_slug((string)($input['slug'] ?? $input['title']));
+            if ($slug === '') { http_response_code(400); echo json_encode(['error' => 'Slug non valido']); return; }
+            if ($app->storage->exists('articles', $slug)) {
+                http_response_code(409);
+                echo json_encode(['error' => 'Esiste già un articolo con questo slug: per modificarlo usa POST /api/articles/' . $slug]);
+                return;
             }
+            $publishAt = $this->apiDate($input['publish_at'] ?? '');
+            if ($publishAt === null) { http_response_code(400); echo json_encode(['error' => 'publish_at non è una data valida']); return; }
+            $input['content'] = $this->apiContent($user, $input['content'] ?? '');
             $article = [
                 'id' => ocms_uuid(),
                 'title' => trim($input['title']),
@@ -3428,28 +4133,43 @@ HTML;
             header('Content-Type: application/json');
             $article = $app->storage->find('articles', $params['slug']);
             if (!$article) { http_response_code(404); echo json_encode(['error' => 'Not found']); return; }
-            // Publishers can only edit their own articles; editor+ can edit all
+            // Publisher può modificare solo i propri, editor+ tutti
             if (!$this->apiHasRole($user, 'editor') && ($article['author'] ?? '') !== $user['username']) {
                 http_response_code(403);
                 echo json_encode(['error' => 'Puoi modificare solo i tuoi articoli']);
                 return;
             }
             $input = json_decode(file_get_contents('php://input'), true);
+            if (!is_array($input)) { http_response_code(400); echo json_encode(['error' => 'JSON non valido']); return; }
+            $previous = $article;
+            if (isset($input['content'])) $input['content'] = $this->apiContent($user, $input['content']);
             foreach (['title', 'excerpt', 'content', 'cover_image', 'gallery', 'category', 'tags', 'status', 'featured', 'meta'] as $field) {
                 if (isset($input[$field])) $article[$field] = $input[$field];
             }
             if (isset($input['publish_at'])) {
-                $article['publish_at'] = !empty($input['publish_at']) ? (new DateTime($input['publish_at']))->format('c') : '';
+                $pa = $this->apiDate($input['publish_at']);
+                if ($pa === null) { http_response_code(400); echo json_encode(['error' => 'publish_at non è una data valida']); return; }
+                $article['publish_at'] = $pa;
             }
-            if (isset($input['title']) && !empty($input['slug'])) {
-                $newSlug = ocms_slug($input['slug']);
-                if ($newSlug !== $params['slug']) {
-                    $app->storage->delete('articles', $params['slug']);
+            $oldSlug = $params['slug'];
+            if (!empty($input['slug'])) {
+                $newSlug = ocms_slug((string)$input['slug']);
+                if ($newSlug !== '' && $newSlug !== $oldSlug) {
+                    if ($app->storage->exists('articles', $newSlug)) {
+                        http_response_code(409);
+                        echo json_encode(['error' => 'Lo slug ' . $newSlug . ' è già usato da un altro articolo']);
+                        return;
+                    }
                     $article['slug'] = $newSlug;
                 }
             }
+            // Anche le modifiche via API lasciano una revisione ripristinabile
+            ocms_save_revision($previous, $oldSlug, $article['slug']);
             $article['updated_at'] = ocms_now();
-            $app->storage->save('articles', $article['slug'], $article);
+            if (!$app->storage->save('articles', $article['slug'], $article)) {
+                http_response_code(500); echo json_encode(['error' => 'Salvataggio non riuscito']); return;
+            }
+            if ($article['slug'] !== $oldSlug) $app->storage->delete('articles', $oldSlug);
             echo json_encode(['success' => true, 'article' => $article]);
         });
 
@@ -3468,7 +4188,7 @@ HTML;
             echo json_encode(['success' => true]);
         });
 
-        // --- Pages CRUD (editor+) ---
+        // --- Pagine CRUD (editor+) ---
 
         $this->router->post('/api/pages', function () use ($app) {
             $user = $this->apiAuth($app);
@@ -3480,7 +4200,14 @@ HTML;
                 echo json_encode(['error' => 'Campo title obbligatorio']);
                 return;
             }
-            $slug = ocms_slug($input['slug'] ?? $input['title']);
+            $slug = ocms_slug((string)($input['slug'] ?? $input['title']));
+            if ($slug === '') { http_response_code(400); echo json_encode(['error' => 'Slug non valido']); return; }
+            if ($app->storage->exists('pages', $slug)) {
+                http_response_code(409);
+                echo json_encode(['error' => 'Esiste già una pagina con questo slug: per modificarla usa POST /api/pages/' . $slug]);
+                return;
+            }
+            $input['content'] = $this->apiContent($user, $input['content'] ?? '');
             $page = [
                 'id' => ocms_uuid(),
                 'title' => trim($input['title']),
@@ -3508,18 +4235,30 @@ HTML;
             $page = $app->storage->find('pages', $params['slug']);
             if (!$page) { http_response_code(404); echo json_encode(['error' => 'Not found']); return; }
             $input = json_decode(file_get_contents('php://input'), true);
+            if (!is_array($input)) { http_response_code(400); echo json_encode(['error' => 'JSON non valido']); return; }
+            $previous = $page;
+            if (isset($input['content'])) $input['content'] = $this->apiContent($user, $input['content']);
             foreach (['title', 'content', 'template', 'layout', 'status', 'meta', 'order', 'parent'] as $field) {
                 if (isset($input[$field])) $page[$field] = $input[$field];
             }
+            $oldSlug = $params['slug'];
             if (!empty($input['slug'])) {
-                $newSlug = ocms_slug($input['slug']);
-                if ($newSlug !== $params['slug']) {
-                    $app->storage->delete('pages', $params['slug']);
+                $newSlug = ocms_slug((string)$input['slug']);
+                if ($newSlug !== '' && $newSlug !== $oldSlug) {
+                    if ($app->storage->exists('pages', $newSlug)) {
+                        http_response_code(409);
+                        echo json_encode(['error' => 'Lo slug ' . $newSlug . ' è già usato da un\'altra pagina']);
+                        return;
+                    }
                     $page['slug'] = $newSlug;
                 }
             }
+            ocms_save_revision($previous, '_page_' . $oldSlug, '_page_' . $page['slug']);
             $page['updated_at'] = ocms_now();
-            $app->storage->save('pages', $page['slug'], $page);
+            if (!$app->storage->save('pages', $page['slug'], $page)) {
+                http_response_code(500); echo json_encode(['error' => 'Salvataggio non riuscito']); return;
+            }
+            if ($page['slug'] !== $oldSlug) $app->storage->delete('pages', $oldSlug);
             echo json_encode(['success' => true, 'page' => $page]);
         });
 
@@ -3532,7 +4271,7 @@ HTML;
             echo json_encode(['success' => true]);
         });
 
-        // --- Categories CRUD (editor+) ---
+        // --- Categorie CRUD (editor+) ---
 
         $this->router->post('/api/categories', function () use ($app) {
             $user = $this->apiAuth($app);
@@ -3566,7 +4305,7 @@ HTML;
             echo json_encode(['success' => true]);
         });
 
-        // --- Comments API (editor+) ---
+        // --- Commenti API (editor+) ---
 
         $this->router->get('/api/comments', function () use ($app) {
             $user = $this->apiAuth($app);
@@ -3625,14 +4364,14 @@ HTML;
             echo json_encode(ocms_analytics_range($days));
         });
 
-        // --- Users (administrator+) ---
+        // --- Utenti (administrator+) ---
 
         $this->router->get('/api/users', function () use ($app) {
             $user = $this->apiAuth($app);
             $this->apiRequireRole($user, 'administrator');
             header('Content-Type: application/json');
             $users = $app->storage->findAll('users');
-            // Remove sensitive fields (password and tokens)
+            // Rimuovi password e token
             $safe = array_map(function ($u) {
                 unset($u['password'], $u['api_tokens'], $u['activation_token']);
                 return $u;
@@ -3650,7 +4389,7 @@ HTML;
             echo json_encode($u);
         });
 
-        // --- Settings (super_administrator) ---
+        // --- Impostazioni (super_administrator) ---
 
         $this->router->get('/api/settings', function () use ($app) {
             $user = $this->apiAuth($app);
@@ -3678,7 +4417,6 @@ HTML;
 
         // ─── API MANAGEMENT ───
 
-        // API documentation and token management page
         $this->router->get('/api-docs', function () use ($app) {
             $app->auth->requireRole('registered');
             $currentUser = $app->auth->user()['username'];
@@ -3686,13 +4424,13 @@ HTML;
             $app->renderAdmin('api/index', ['tokens' => $tokens]);
         });
 
-        // Create API token
+        // Crea token
         $this->router->post('/api-tokens/create', function () use ($app) {
             $app->auth->requireRole('registered');
             header('Content-Type: application/json');
             $input = json_decode(file_get_contents('php://input'), true);
             $token = $input['_csrf_token'] ?? '';
-            if (!hash_equals($_SESSION['_csrf_token'] ?? '', $token)) {
+            if (!ocms_csrf_check($token)) {
                 http_response_code(403);
                 echo json_encode(['error' => 'Token CSRF non valido']);
                 return;
@@ -3713,13 +4451,13 @@ HTML;
             echo json_encode(['success' => true, 'token' => $entry['token'], 'id' => $entry['id'], 'name' => $entry['name']]);
         });
 
-        // Revoke API token
+        // Revoca token
         $this->router->post('/api-tokens/revoke', function () use ($app) {
             $app->auth->requireRole('registered');
             header('Content-Type: application/json');
             $input = json_decode(file_get_contents('php://input'), true);
             $csrfToken = $input['_csrf_token'] ?? '';
-            if (!hash_equals($_SESSION['_csrf_token'] ?? '', $csrfToken)) {
+            if (!ocms_csrf_check($csrfToken)) {
                 http_response_code(403);
                 echo json_encode(['error' => 'Token CSRF non valido']);
                 return;
@@ -3735,9 +4473,8 @@ HTML;
             echo json_encode(['success' => true]);
         });
 
-        // ─── GUIDE ───
+        // ─── GUIDA ───
 
-        // Render the admin guide page
         $this->router->get('/guide', function () use ($app) {
             $app->auth->requireRole('registered');
             $app->renderAdmin('guide');
@@ -3745,7 +4482,6 @@ HTML;
 
         // ─── LAYOUT BUILDER ───
 
-        // List all layouts
         $this->router->get('/layouts', function () use ($app) {
             $app->auth->requireRole('administrator');
             $layouts = $app->storage->findAll('layouts', null, 'name', 'asc');
@@ -3767,7 +4503,7 @@ HTML;
             $app->auth->requireRole('administrator');
             header('Content-Type: application/json');
             $input = json_decode(file_get_contents('php://input'), true);
-            if (empty($_SESSION['_csrf_token']) || empty($input['_csrf_token']) || !hash_equals($_SESSION['_csrf_token'], $input['_csrf_token'])) {
+            if (!ocms_csrf_check($input['_csrf_token'] ?? null)) {
                 http_response_code(403); echo json_encode(['error' => 'CSRF']); return;
             }
             $id = basename($input['id'] ?? 'base');
@@ -3788,7 +4524,7 @@ HTML;
             if (!$name) { ocms_flash_set('error', 'Nome obbligatorio'); ocms_redirect(ocms_base_url() . '/admin/layouts'); }
             $id = ocms_slug($name);
 
-            // Copy from the base layout
+            // Copia dal layout base
             $base = $app->storage->find('layouts', 'base');
             $layout = $base ?: ['sections' => []];
             $layout['id'] = $id;
@@ -3808,20 +4544,19 @@ HTML;
             ocms_redirect(ocms_base_url() . '/admin/layouts');
         });
 
-        // Preview layout (renders HTML)
+        // Preview layout (renderizza HTML)
         $this->router->post('/layouts/preview', function () use ($app) {
             $app->auth->requireRole('administrator');
             $input = json_decode(file_get_contents('php://input'), true);
-            if (empty($_SESSION['_csrf_token']) || empty($input['_csrf_token']) || !hash_equals($_SESSION['_csrf_token'], $input['_csrf_token'])) {
+            if (!ocms_csrf_check($input['_csrf_token'] ?? null)) {
                 http_response_code(403); echo 'CSRF'; return;
             }
             $renderer = new LayoutRenderer($app, ['title' => 'Anteprima', 'content' => '<p>Contenuto della pagina di esempio.</p>']);
             echo $renderer->render(['sections' => $input['sections'] ?? []]);
         });
 
-        // ─── THEMES ───
+        // ─── TEMI ───
 
-        // List all installed themes
         $this->router->get('/themes', function () use ($app) {
             $app->auth->requireRole('super_administrator');
             $themesDir = ocms_base_path() . '/themes';
@@ -3832,25 +4567,24 @@ HTML;
                 $meta = file_exists($manifest) ? json_decode(file_get_contents($manifest), true) : [];
                 $meta['id'] = $d;
                 $meta['active'] = ($app->config['theme'] ?? 'flavor') === $d;
-                // Count files in the theme
+                // Conta file
                 $count = 0;
                 $iter = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($themesDir.'/'.$d, RecursiveDirectoryIterator::SKIP_DOTS));
                 foreach ($iter as $f) { if ($f->isFile()) $count++; }
                 $meta['file_count'] = $count;
-                // Check for screenshot
+                // Screenshot
                 $meta['has_screenshot'] = file_exists($themesDir . '/' . $d . '/screenshot.png') || file_exists($themesDir . '/' . $d . '/screenshot.jpg');
                 $themes[] = $meta;
             }
             $app->renderAdmin('themes/index', ['themes' => $themes]);
         });
 
-        // Theme creation wizard (form)
+        // Wizard creazione tema
         $this->router->get('/themes/wizard', function () use ($app) {
             $app->auth->requireRole('super_administrator');
             $app->renderAdmin('themes/wizard');
         });
 
-        // Theme creation wizard (process)
         $this->router->post('/themes/wizard', function () use ($app) {
             $app->auth->requireRole('super_administrator');
             if (!ocms_csrf_verify()) { ocms_flash_set('error', 'CSRF'); ocms_redirect(ocms_base_url() . '/admin/themes/wizard'); }
@@ -3863,7 +4597,7 @@ HTML;
                 ocms_redirect(ocms_base_url() . '/admin/themes/wizard');
             }
 
-            // Create directory structure
+            // Crea struttura
             mkdir($themesDir . '/assets/css', 0755, true);
             mkdir($themesDir . '/assets/js', 0755, true);
             mkdir($themesDir . '/assets/img', 0755, true);
@@ -3893,18 +4627,18 @@ HTML;
             ];
             file_put_contents($themesDir . '/theme.json', json_encode($manifest, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
 
-            // Generate CSS
+            // Genera CSS
             $css = self::generateThemeCSS($manifest);
             file_put_contents($themesDir . '/assets/css/style.css', $css);
 
-            // Generate templates
+            // Genera templates
             $templates = ['home', 'page', 'blog', 'article', '404'];
             foreach ($templates as $tpl) {
                 $content = self::generateThemeTemplate($tpl, $manifest);
                 file_put_contents($themesDir . '/templates/' . $tpl . '.php', $content);
             }
 
-            // JS placeholder file
+            // JS placeholder
             file_put_contents($themesDir . '/assets/js/app.js', "/* {$manifest['name']} — JavaScript */\ndocument.addEventListener('DOMContentLoaded', function() {\n    // Il tuo codice qui\n});\n");
 
             // README
@@ -3914,7 +4648,7 @@ HTML;
             ocms_redirect(ocms_base_url() . '/admin/themes');
         });
 
-        // Activate theme
+        // Attiva tema
         $this->router->post('/themes/activate/{id}', function ($params) use ($app) {
             $app->auth->requireRole('super_administrator');
             if (!ocms_csrf_verify()) { ocms_flash_set('error', 'CSRF'); ocms_redirect(ocms_base_url() . '/admin/themes'); }
@@ -3929,7 +4663,7 @@ HTML;
             ocms_redirect(ocms_base_url() . '/admin/themes');
         });
 
-        // Download theme as ZIP
+        // Scarica tema ZIP
         $this->router->get('/themes/download/{id}', function ($params) use ($app) {
             $app->auth->requireRole('super_administrator');
             $id = basename($params['id']);
@@ -3958,7 +4692,7 @@ HTML;
             exit;
         });
 
-        // Install theme from ZIP upload
+        // Installa tema da ZIP
         $this->router->post('/themes/install', function () use ($app) {
             $app->auth->requireRole('super_administrator');
             if (!ocms_csrf_verify()) { ocms_flash_set('error', 'CSRF'); ocms_redirect(ocms_base_url() . '/admin/themes'); }
@@ -3972,7 +4706,7 @@ HTML;
                 ocms_flash_set('error', 'ZIP non valido'); ocms_redirect(ocms_base_url() . '/admin/themes');
             }
 
-            // Look for theme.json inside the ZIP
+            // Cerca theme.json
             $themeId = null;
             $prefix = '';
             for ($i = 0; $i < $zip->numFiles; $i++) {
@@ -3986,7 +4720,7 @@ HTML;
             }
 
             if (!$themeId) {
-                // Try to use the first folder name
+                // Prova a usare il nome del primo folder
                 $first = $zip->getNameIndex(0);
                 if (str_contains($first, '/')) $themeId = explode('/', $first)[0];
             }
@@ -4015,7 +4749,7 @@ HTML;
             ocms_redirect(ocms_base_url() . '/admin/themes');
         });
 
-        // Delete theme
+        // Elimina tema
         $this->router->post('/themes/delete/{id}', function ($params) use ($app) {
             $app->auth->requireRole('super_administrator');
             if (!ocms_csrf_verify()) { ocms_flash_set('error', 'CSRF'); ocms_redirect(ocms_base_url() . '/admin/themes'); }
@@ -4039,22 +4773,22 @@ HTML;
             ocms_redirect(ocms_base_url() . '/admin/themes');
         });
 
-        // ─── EXTENSIONS ───
+        // ─── ESTENSIONI ───
 
-        // List all extensions
+        // Lista estensioni
         $this->router->get('/extensions', function () use ($app) {
             $app->auth->requireRole('super_administrator');
             $extensions = $app->extensions->getAll();
             $app->renderAdmin('extensions/index', ['extensions' => $extensions]);
         });
 
-        // New extension wizard -- form
+        // Wizard nuova estensione — form
         $this->router->get('/extensions/wizard', function () use ($app) {
             $app->auth->requireRole('super_administrator');
             $app->renderAdmin('extensions/wizard');
         });
 
-        // New extension wizard -- creation
+        // Wizard nuova estensione — creazione
         $this->router->post('/extensions/wizard', function () use ($app) {
             $app->auth->requireRole('super_administrator');
             if (!ocms_csrf_verify()) {
@@ -4085,7 +4819,7 @@ HTML;
             }
         });
 
-        // Extension detail page
+        // Dettaglio estensione
         $this->router->get('/extensions/detail/{id}', function ($params) use ($app) {
             $app->auth->requireRole('super_administrator');
             $manifest = $app->extensions->getManifest($params['id']);
@@ -4094,7 +4828,7 @@ HTML;
                 ocms_redirect(ocms_base_url() . '/admin/extensions');
             }
 
-            // Read the file structure
+            // Leggi la struttura file
             $extDir = ocms_base_path() . '/extensions/' . $params['id'];
             $files = [];
             if (is_dir($extDir)) {
@@ -4119,14 +4853,14 @@ HTML;
             ]);
         });
 
-        // Enable/Disable extension (AJAX)
+        // Attiva/Disattiva estensione (AJAX)
         $this->router->post('/extensions/toggle/{id}', function ($params) use ($app) {
             $app->auth->requireRole('super_administrator');
             header('Content-Type: application/json');
 
             $input = json_decode(file_get_contents('php://input'), true);
             $token = $input['_csrf_token'] ?? '';
-            if (!hash_equals($_SESSION['_csrf_token'] ?? '', $token)) {
+            if (!ocms_csrf_check($token)) {
                 http_response_code(403);
                 echo json_encode(['error' => 'Token CSRF non valido']);
                 return;
@@ -4149,7 +4883,7 @@ HTML;
             echo json_encode(['success' => true, 'enabled' => $enabled]);
         });
 
-        // Upload and install extension from ZIP
+        // Upload e installa da ZIP
         $this->router->post('/extensions/install', function () use ($app) {
             $app->auth->requireRole('super_administrator');
             if (!ocms_csrf_verify()) {
@@ -4174,7 +4908,7 @@ HTML;
             }
         });
 
-        // Uninstall extension
+        // Disinstalla estensione
         $this->router->post('/extensions/uninstall/{id}', function ($params) use ($app) {
             $app->auth->requireRole('super_administrator');
             if (!ocms_csrf_verify()) {
@@ -4187,7 +4921,7 @@ HTML;
             ocms_redirect(ocms_base_url() . '/admin/extensions');
         });
 
-        // Download extension as ZIP package
+        // Scarica pacchetto ZIP
         $this->router->get('/extensions/download/{id}', function ($params) use ($app) {
             $app->auth->requireRole('super_administrator');
             $zipPath = $app->extensions->createPackage($params['id']);
@@ -4207,7 +4941,7 @@ HTML;
 
         // ─── API ───
 
-        // Generic resource listing API (used via AJAX)
+        // API: lista risorse generica (usata via AJAX)
         $this->router->get('/api/{resource}', function ($params) use ($app) {
             $app->auth->requireRole('editor');
             $allowed = ['pages', 'articles', 'categories', 'tags', 'menus', 'users'];
@@ -4223,15 +4957,7 @@ HTML;
     }
 
     /**
-     * Render a template from the active theme.
-     *
-     * Falls back to the default 'flavor' theme if the template is not found
-     * in the currently active theme. Injects the CSS --site-width variable
-     * immediately after the <head> tag.
-     *
-     * @param string $template Template name (without .php extension)
-     * @param array  $data     Variables to extract into the template scope
-     * @return void
+     * Renderizza un template del tema attivo
      */
     public function render(string $template, array $data = []): void {
         $theme = $this->config['theme'] ?? 'flavor';
@@ -4251,43 +4977,38 @@ HTML;
         ob_start();
         include $file;
         $html = ob_get_clean();
-        // Inject the CSS --site-width variable right after <head>
+        // Inietta la variabile CSS --site-width subito dopo <head>
         $widthStyle = ocms_site_width_style();
         $html = preg_replace('/(<head[^>]*>)/i', '$1' . "\n    " . $widthStyle, $html, 1);
-        // Inject powered-by badge before </body>
-        $html = $this->injectPoweredBy($html);
-        echo $html;
+        echo $this->injectPoweredBy($html);
     }
 
     /**
-     * Render a page using the Layout Builder.
+     * Renderizza una pagina usando il Layout Builder
      *
-     * How it works:
-     * 1. Loads the base layout (inherited by all pages)
-     * 2. Loads the page-specific layout (if different from base)
-     * 3. Merge: the specific layout overrides base sections with the same ID
-     * 4. The "content" module inserts the page's HTML content
-     * 5. Outputs the full HTML document with head, theme CSS, and body
-     *
-     * @param array $page Page data array (must include 'layout', 'title', 'content', 'meta')
-     * @return void
+     * Funzionamento:
+     * 1. Carica il layout base (ereditato da tutte le pagine)
+     * 2. Carica il layout specifico della pagina (se diverso da base)
+     * 3. Merge: il layout specifico sovrascrive le sezioni del base con lo stesso ID
+     * 4. Il modulo "content" inserisce il contenuto HTML della pagina
+     * 5. Genera HTML completo con head, CSS del tema e body
      */
     public function renderWithLayout(array $page): void {
         $layoutId = $page['layout'] ?? 'base';
         $theme = $this->config['theme'] ?? 'flavor';
         $font = 'Inter';
 
-        // Load theme.json for the font setting
+        // Carica theme.json per il font
         $themeJson = ocms_base_path() . "/themes/{$theme}/theme.json";
         if (file_exists($themeJson)) {
             $themeMeta = json_decode(file_get_contents($themeJson), true);
             $font = $themeMeta['font'] ?? 'Inter';
         }
 
-        // Load the base layout
+        // Carica layout base
         $baseLayout = $this->storage->find('layouts', 'base');
 
-        // If the chosen layout is not "base", load and merge it
+        // Se il layout scelto non è "base", carica quello e merge
         $layout = $baseLayout ?? ['sections' => []];
         if ($layoutId !== 'base') {
             $specificLayout = $this->storage->find('layouts', $layoutId);
@@ -4296,11 +5017,11 @@ HTML;
             }
         }
 
-        // Render the layout
+        // Renderizza
         $renderer = new LayoutRenderer($this, $page);
         $bodyHtml = $renderer->render($layout);
 
-        // Output the full HTML document
+        // Output HTML completo
         $siteName = ocms_escape($this->config['site_name'] ?? 'O-CMS');
         $pageTitle = ocms_escape($page['meta']['title'] ?? $page['title'] ?? $siteName);
         $metaDesc = ocms_escape($page['meta']['description'] ?? '');
@@ -4332,11 +5053,39 @@ HTML;
     }
 
     /**
-     * Render an admin panel view.
-     *
-     * @param string $view View path relative to admin/views/ (without .php extension)
-     * @param array  $data Variables to extract into the view scope
-     * @return void
+     * Pagina 503 della modalità manutenzione (template del tema "maintenance" se esiste)
+     */
+    private function renderMaintenance(): void {
+        http_response_code(503);
+        header('Retry-After: 3600');
+        $theme = $this->config['theme'] ?? 'flavor';
+        $tpl = ocms_base_path() . '/themes/' . basename($theme) . '/templates/maintenance.php';
+        if (is_file($tpl)) {
+            $this->render('maintenance');
+            return;
+        }
+        $name = ocms_escape($this->config['site_name'] ?? 'Sito');
+        echo '<!DOCTYPE html><html lang="it"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
+           . '<meta name="robots" content="noindex"><title>Manutenzione — ' . $name . '</title>'
+           . '<style>body{margin:0;min-height:100vh;display:grid;place-items:center;font-family:system-ui,sans-serif;'
+           . 'background:#0b1224;color:#e2e8f0;text-align:center;padding:24px}h1{font-size:1.6rem;margin:0 0 .5rem}p{opacity:.75}</style>'
+           . '</head><body><main><h1>' . $name . ' torna presto</h1><p>Stiamo facendo un po\' di manutenzione. Riprova tra qualche minuto.</p></main></body></html>';
+    }
+
+    /**
+     * Pagina di atterraggio dopo il login in base al ruolo
+     * (prima editor e publisher finivano su un 403).
+     */
+    public function adminHomeFor(?array $user): string {
+        $levels = $this->auth->getRoleHierarchy();
+        $level = $levels[$user['role'] ?? ''] ?? 0;
+        if ($level >= $levels['administrator']) return '/admin';
+        if ($level >= $levels['editor']) return '/admin/articles';
+        return '/';
+    }
+
+    /**
+     * Renderizza una vista admin
      */
     public function renderAdmin(string $view, array $data = []): void {
         $file = ocms_base_path() . "/admin/views/{$view}.php";
@@ -4352,13 +5101,10 @@ HTML;
     }
 
     /**
-     * Generate the complete CSS stylesheet for a new theme.
-     *
-     * Uses the color palette, font, and layout style from the theme manifest
-     * to produce a fully functional CSS file with responsive breakpoints.
-     *
-     * @param array $manifest Theme manifest data (colors, font, layout, name)
-     * @return string Complete CSS stylesheet content
+     * Autenticazione API: controlla header Authorization Bearer o sessione
+     */
+    /**
+     * Genera il CSS completo per un nuovo tema
      */
     private static function generateThemeCSS(array $manifest): string {
         $c = $manifest['colors'] ?? [];
@@ -4368,7 +5114,7 @@ HTML;
         $text = $c['text'] ?? '#f1f5f9';
         $font = $manifest['font'] ?? 'Inter';
 
-        // Calculate derived colors
+        // Calcola colori derivati
         $bgLight = self::adjustBrightness($bg, 15);
         $textMuted = self::adjustBrightness($text, -30);
         $border = 'rgba(255,255,255,0.08)';
@@ -4626,20 +5372,13 @@ CSS;
     }
 
     /**
-     * Generate a PHP template file for a new theme.
-     *
-     * Produces complete PHP template files (home, page, blog, article, 404)
-     * with header navigation, footer, and Google Fonts integration.
-     *
-     * @param string $type     Template type: 'home', 'page', 'blog', 'article', or '404'
-     * @param array  $manifest Theme manifest data (name, font, colors)
-     * @return string Complete PHP template file content
+     * Genera un template PHP per un nuovo tema
      */
     private static function generateThemeTemplate(string $type, array $manifest): string {
         $name = $manifest['name'] ?? 'Tema';
         $font = $manifest['font'] ?? 'Inter';
 
-        // Common header and footer partials
+        // Header e footer comuni
         $head = '<!DOCTYPE html>
 <html lang="<?= ocms_escape($app->config[\'language\'] ?? \'it\') ?>">
 <head>
@@ -4680,7 +5419,7 @@ CSS;
          Personalizza il footer qui. Puoi aggiungere colonne, social, ecc. -->
     <footer class="site-footer">
         <div class="container">
-            <p>&copy; <?= date(\'Y\') ?> <?= ocms_escape($app->config[\'site_name\'] ?? \'O-CMS\') ?></p>
+            <p>&copy; <?= date(\'Y\') ?> <?= ocms_escape($app->config[\'site_name\'] ?? \'O-CMS\') ?>. Powered by O-CMS.</p>
         </div>
     </footer>
 </body>
@@ -4813,7 +5552,7 @@ CSS;
             <a href="<?= ocms_base_url() ?>/" class="btn-primary">Torna alla Home</a>
         </div>
     </main>';
-                $headerNav = ''; // 404 page without header
+                $headerNav = ''; // 404 senza header
                 $footer = '</body></html>';
                 break;
 
@@ -4825,10 +5564,7 @@ CSS;
     }
 
     /**
-     * Generate the README documentation file for a new theme.
-     *
-     * @param array $manifest Theme manifest data (name, id, etc.)
-     * @return string Markdown-formatted README content
+     * Genera il README del tema
      */
     private static function generateThemeReadme(array $manifest): string {
         $name = $manifest['name'] ?? 'Tema';
@@ -4888,11 +5624,7 @@ MD;
     }
 
     /**
-     * Adjust the brightness of a hex color by a given percentage.
-     *
-     * @param string $hex     Hex color string (e.g., '#0f172a' or '0f172a')
-     * @param int    $percent Brightness adjustment (-100 to 100; positive = lighter, negative = darker)
-     * @return string Adjusted hex color string with '#' prefix
+     * Aggiusta la luminosità di un colore hex
      */
     private static function adjustBrightness(string $hex, int $percent): string {
         $hex = ltrim($hex, '#');
@@ -4904,22 +5636,28 @@ MD;
     }
 
     /**
-     * Authenticate an API request via session or Bearer token.
-     *
-     * Checks for an active session first, then falls back to the
-     * Authorization: Bearer header. Sends a 401 JSON response and
-     * exits if authentication fails.
-     *
-     * @param App $app Application instance
-     * @return array Authenticated user data
+     * Autenticazione API: sessione o Bearer token → restituisce dati utente
      */
     private function apiAuth(App $app): array {
-        // If there is an active session, use the session user
-        if ($app->auth->check()) {
+        // Se ha una sessione attiva, usa l'utente in sessione.
+        // Con la sessione (cookie) le scritture richiedono anche il token CSRF,
+        // altrimenti qualsiasi pagina dello stesso sito potrebbe scrivere a nome dell'admin.
+        // Con il Bearer token non serve: il token non parte da solo come un cookie.
+        $bearer = $_SERVER['HTTP_AUTHORIZATION'] ?? $_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ?? '';
+        if ($app->auth->check() && !preg_match('/^Bearer\s+/i', $bearer)) {
+            if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'GET') {
+                $sent = $_SERVER['HTTP_X_CSRF_TOKEN'] ?? '';
+                if (empty($_SESSION['_csrf_token']) || !is_string($sent) || !hash_equals($_SESSION['_csrf_token'], $sent)) {
+                    http_response_code(403);
+                    header('Content-Type: application/json');
+                    echo json_encode(['error' => 'Con la sessione serve l\'header X-CSRF-Token (oppure usa un Bearer token)']);
+                    exit;
+                }
+            }
             return $app->auth->user();
         }
 
-        // Check for Bearer token in the Authorization header
+        // Controlla header Bearer token
         $header = $_SERVER['HTTP_AUTHORIZATION'] ?? $_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ?? '';
         if (preg_match('/Bearer\s+(.+)$/i', $header, $m)) {
             $user = $app->auth->authenticateByToken($m[1]);
@@ -4933,14 +5671,27 @@ MD;
     }
 
     /**
-     * Enforce a minimum role requirement for an API endpoint.
-     *
-     * Sends a 403 JSON response and exits if the user's role
-     * is below the required minimum.
-     *
-     * @param array  $user    Authenticated user data
-     * @param string $minRole Minimum required role (e.g., 'editor', 'administrator')
-     * @return void
+     * Data facoltativa dall'API: '' se vuota, null se non valida, ISO 8601 altrimenti
+     */
+    private function apiDate($value): ?string {
+        if ($value === null || $value === '' || $value === false) return '';
+        if (!is_string($value)) return null;
+        try { return (new DateTime($value))->format('c'); }
+        catch (\Throwable $e) { return null; }
+    }
+
+    /**
+     * Contenuto HTML ricevuto via API: amministratori e super amministratori
+     * possono scrivere HTML libero (script compresi, come prima);
+     * per editor e publisher passa dal sanitizer come nel pannello admin.
+     */
+    private function apiContent(array $user, $content): string {
+        $content = is_string($content) ? $content : '';
+        return $this->apiHasRole($user, 'administrator') ? $content : ocms_sanitize_html($content);
+    }
+
+    /**
+     * Verifica ruolo minimo per API — ritorna 403 JSON se insufficiente
      */
     private function apiRequireRole(array $user, string $minRole): void {
         if (!$this->apiHasRole($user, $minRole)) {
@@ -4952,11 +5703,7 @@ MD;
     }
 
     /**
-     * Check whether an API user has at least the specified role.
-     *
-     * @param array  $user User data array (must include 'role')
-     * @param string $role Role to check against (e.g., 'editor', 'administrator')
-     * @return bool True if the user's role meets or exceeds the required role
+     * Controlla se un utente API ha almeno il ruolo indicato
      */
     private function apiHasRole(array $user, string $role): bool {
         $hierarchy = $this->auth->getRoleHierarchy();

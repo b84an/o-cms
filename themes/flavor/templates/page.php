@@ -1,28 +1,39 @@
-<!DOCTYPE html>
-<html lang="<?= ocms_escape($app->config['language'] ?? 'it') ?>">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><?= ocms_escape($page['meta']['title'] ?? $page['title']) ?> — <?= ocms_escape($app->config['site_name'] ?? 'O-CMS') ?></title>
-    <meta name="description" content="<?= ocms_escape($page['meta']['description'] ?? '') ?>">
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="<?= ocms_base_url() ?>/themes/flavor/assets/css/style.css">
-</head>
-<body>
-    <?php include dirname(__DIR__) . '/partials/header.php'; ?>
-
-    <main class="site-main">
-        <article class="page-content">
-            <div class="container">
-                <h1><?= ocms_escape($page['title']) ?></h1>
-                <div class="content">
-                    <?= $page['content'] ?>
-                </div>
-            </div>
-        </article>
-    </main>
-
-    <?php include dirname(__DIR__) . '/partials/footer.php'; ?>
-</body>
-</html>
+<?php
+require_once __DIR__ . '/_bootstrap.php';
+$metaTitle = ($page['meta']['title'] ?? '') ?: (string) ($page['title'] ?? '');
+$metaDesc  = (string) ($page['meta']['description'] ?? '');
+$flashes   = ocms_flash_get();
+$flavor = [
+    'title'       => $metaTitle,
+    'description' => $metaDesc,
+    'seo'         => [
+        'title'       => $metaTitle,
+        'description' => $metaDesc,
+        'image'       => ($page['meta']['og_image'] ?? '') ?: ($page['cover_image'] ?? ''),
+    ],
+    'bodyClass'   => 'page-static',
+];
+include __DIR__ . '/_header.php';
+?>
+<article class="static-page">
+    <header class="wrap page-head page-head-narrow">
+        <h1 class="display"><?= ocms_escape($page['title'] ?? '') ?></h1>
+    </header>
+    <div class="wrap">
+        <?= flavor_flashes($flashes) ?>
+        <div class="prose prose-page">
+            <?= flavor_content((string) ($page['content'] ?? '')) ?>
+        </div>
+<?php if (($page['views'] ?? 0) > 0 || !empty($page['updated_at'])): ?>
+        <p class="page-foot muted">
+<?php if (!empty($page['updated_at'])): ?>
+            <span>Aggiornata il <time datetime="<?= ocms_escape(flavor_datetime($page['updated_at'])) ?>"><?= ocms_escape(flavor_date($page['updated_at'])) ?></time></span>
+<?php endif; ?>
+<?php if (($page['views'] ?? 0) > 0): ?>
+            <span><?= flavor_icon('eye', 15) ?><?= number_format((int) $page['views'], 0, ',', '.') ?> visite</span>
+<?php endif; ?>
+        </p>
+<?php endif; ?>
+    </div>
+</article>
+<?php include __DIR__ . '/_footer.php'; ?>

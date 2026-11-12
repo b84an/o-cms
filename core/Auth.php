@@ -1,29 +1,17 @@
 <?php
 /**
- * O-CMS — Authentication
- *
- * Handles user login/logout, role-based access control, user registration,
- * account activation, and API token management.
- *
- * @package O-CMS
- * @version 1.0.0
+ * O-CMS — Autenticazione
  */
 class Auth {
     private JsonStorage $storage;
+    private ?array $freshUser = null;
 
-    /**
-     * @param JsonStorage $storage The JSON storage engine for user data
-     */
     public function __construct(JsonStorage $storage) {
         $this->storage = $storage;
     }
 
     /**
-     * Attempt login with username and password.
-     *
-     * @param string $username The username to authenticate
-     * @param string $password The plaintext password to verify
-     * @return array Associative array with 'success' (bool) and optionally 'error' (string)
+     * Tenta il login con username e password
      */
     public function attempt(string $username, string $password): array {
         $user = $this->storage->find('users', $username);
@@ -35,12 +23,12 @@ class Auth {
             return ['success' => false, 'error' => 'Credenziali non valide'];
         }
 
-        // Check if the account is active
+        // Controlla se l'account è attivo
         if (isset($user['active']) && !$user['active']) {
             return ['success' => false, 'error' => 'Account non attivato. Controlla la tua email per il link di attivazione.'];
         }
 
-        // Login successful
+        // Login riuscito
         Session::regenerate();
         Session::set('user', [
             'username' => $user['username'],
@@ -50,7 +38,7 @@ class Auth {
             'avatar' => $user['avatar'] ?? '',
         ]);
 
-        // Update last_login timestamp
+        // Aggiorna last_login
         $user['last_login'] = ocms_now();
         $this->storage->save('users', $username, $user);
 
@@ -58,36 +46,52 @@ class Auth {
     }
 
     /**
-     * Log out the current user by destroying the session.
-     *
-     * @return void
+     * Effettua il logout
      */
     public function logout(): void {
         Session::destroy();
     }
 
     /**
-     * Check whether a user is currently authenticated.
-     *
-     * @return bool True if a user is logged in
+     * Verifica se l'utente è loggato
      */
     public function check(): bool {
-        return Session::get('user') !== null;
+        return $this->user() !== null;
     }
 
     /**
-     * Return the currently authenticated user's data.
-     *
-     * @return array|null User data array or null if not logged in
+     * Restituisce i dati dell'utente loggato
      */
     public function user(): ?array {
-        return Session::get('user');
+        $sessionUser = Session::get('user');
+        if (!$sessionUser) return null;
+
+        // Una volta per richiesta: ricarica ruolo e stato dal file utente.
+        // Così un utente eliminato, disattivato o declassato perde subito i permessi.
+        if ($this->freshUser === null || ($this->freshUser['username'] ?? null) !== ($sessionUser['username'] ?? null)) {
+            $stored = $this->storage->find('users', (string)($sessionUser['username'] ?? ''));
+            if (!$stored || (isset($stored['active']) && !$stored['active'])) {
+                Session::remove('user');
+                $this->freshUser = null;
+                return null;
+            }
+            $fresh = [
+                'username' => $stored['username'],
+                'email' => $stored['email'] ?? '',
+                'display_name' => $stored['display_name'] ?? $stored['username'],
+                'role' => $stored['role'] ?? 'registered',
+                'avatar' => $stored['avatar'] ?? '',
+            ];
+            if ($fresh != $sessionUser) {
+                Session::set('user', $fresh);
+            }
+            $this->freshUser = $fresh;
+        }
+        return $this->freshUser;
     }
 
     /**
-     * Return the role hierarchy map (role => numeric level).
-     *
-     * @return array<string, int>
+     * Gerarchia ruoli
      */
     public function getRoleHierarchy(): array {
         return [
@@ -100,9 +104,7 @@ class Auth {
     }
 
     /**
-     * Return human-readable labels for each role.
-     *
-     * @return array<string, string>
+     * Nomi leggibili dei ruoli
      */
     public static function getRoleLabels(): array {
         return [
@@ -115,10 +117,7 @@ class Auth {
     }
 
     /**
-     * Check whether the current user meets or exceeds a given role level.
-     *
-     * @param string $role The minimum role required
-     * @return bool True if the user's role level is >= the required level
+     * Verifica se l'utente ha un determinato ruolo
      */
     public function hasRole(string $role): bool {
         $user = $this->user();
@@ -133,10 +132,7 @@ class Auth {
     }
 
     /**
-     * Require authentication and a minimum role; redirect to login or abort with 403.
-     *
-     * @param string $minRole The minimum role required (default: 'registered')
-     * @return void
+     * Richiede autenticazione, altrimenti redirect al login
      */
     public function requireRole(string $minRole = 'registered'): void {
         if (!$this->check()) {
@@ -150,10 +146,7 @@ class Auth {
     }
 
     /**
-     * Register a new user from the frontend.
-     *
-     * @param array $data User data (username, email, password, display_name)
-     * @return array Result with 'success', optionally 'error', 'token', and 'user'
+     * Registra un nuovo utente (frontend)
      */
     public function register(array $data): array {
         $username = $data['username'];
@@ -162,7 +155,7 @@ class Auth {
             return ['success' => false, 'error' => 'Username già in uso'];
         }
 
-        // Check for duplicate email
+        // Controlla email duplicata
         $allUsers = $this->storage->findAll('users');
         foreach ($allUsers as $u) {
             if (strtolower($u['email']) === strtolower($data['email'])) {
@@ -192,10 +185,7 @@ class Auth {
     }
 
     /**
-     * Activate an account via activation token.
-     *
-     * @param string $token The activation token sent by email
-     * @return bool True if an account was found and activated
+     * Attiva un account tramite token
      */
     public function activate(string $token): bool {
         $allUsers = $this->storage->findAll('users');
@@ -211,21 +201,25 @@ class Auth {
     }
 
     /**
-     * Authenticate via Bearer API token and return the token owner, or null.
-     *
-     * @param string $token The Bearer token from the Authorization header
-     * @return array|null User data array or null if the token is invalid
+     * Autentica via API token Bearer — restituisce l'utente proprietario o null
      */
     public function authenticateByToken(string $token): ?array {
         $allUsers = $this->storage->findAll('users');
         foreach ($allUsers as $u) {
-            // Skip explicitly deactivated users (active=false); users without the field are considered active
+            // Utenti esplicitamente disattivati (active=false); utenti senza il campo sono considerati attivi
             if (isset($u['active']) && !$u['active']) continue;
-            foreach ($u['api_tokens'] ?? [] as &$t) {
-                if (hash_equals($t['token'], $token)) {
-                    // Update last_used timestamp
-                    $t['last_used'] = ocms_now();
-                    $this->storage->save('users', $u['username'], $u);
+            foreach (($u['api_tokens'] ?? []) as $i => $t) {
+                if (hash_equals((string)($t['token'] ?? ''), $token)) {
+                    // Aggiorna last_used al massimo ogni 10 minuti, per non riscrivere
+                    // il file utente a ogni chiamata API
+                    $last = !empty($t['last_used']) ? strtotime($t['last_used']) : 0;
+                    if (time() - (int)$last > 600) {
+                        $this->storage->update('users', $u['username'], function ($d) use ($i, $token) {
+                            if (!$d || !isset($d['api_tokens'][$i]) || !hash_equals((string)$d['api_tokens'][$i]['token'], $token)) return null;
+                            $d['api_tokens'][$i]['last_used'] = ocms_now();
+                            return $d;
+                        });
+                    }
                     return [
                         'username' => $u['username'],
                         'email' => $u['email'],
@@ -240,11 +234,7 @@ class Auth {
     }
 
     /**
-     * Generate a new API token for a user.
-     *
-     * @param string $username The username to create a token for
-     * @param string $name A human-readable name/label for the token
-     * @return array|null The created token entry, or null if the user was not found
+     * Genera un nuovo API token per un utente
      */
     public function createApiToken(string $username, string $name): ?array {
         $user = $this->storage->find('users', $username);
@@ -267,11 +257,7 @@ class Auth {
     }
 
     /**
-     * Revoke an API token by its ID.
-     *
-     * @param string $username The user who owns the token
-     * @param string $tokenId The unique ID of the token to revoke
-     * @return bool True on success
+     * Revoca un API token
      */
     public function revokeApiToken(string $username, string $tokenId): bool {
         $user = $this->storage->find('users', $username);
@@ -283,10 +269,7 @@ class Auth {
     }
 
     /**
-     * Return the API tokens for a user (token values are masked for security).
-     *
-     * @param string $username The username to retrieve tokens for
-     * @return array List of token entries with masked token hints
+     * Restituisce i token API di un utente (senza il token in chiaro per sicurezza)
      */
     public function getApiTokens(string $username): array {
         $user = $this->storage->find('users', $username);
@@ -304,10 +287,7 @@ class Auth {
     }
 
     /**
-     * Create a new user from the admin panel.
-     *
-     * @param array $data User data (username, email, password, display_name, role)
-     * @return bool True on success, false if the username already exists
+     * Crea un nuovo utente (admin)
      */
     public function createUser(array $data): bool {
         $username = $data['username'];

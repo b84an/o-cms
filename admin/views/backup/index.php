@@ -8,7 +8,7 @@ ob_start();
     <h1>Backup & Ripristino</h1>
 </div>
 
-<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-bottom:24px;">
+<div class="grid-3 mb-24">
     <!-- 1. Backup dati -->
     <div class="card" style="background:linear-gradient(135deg,rgba(59,130,246,0.1),rgba(59,130,246,0.03));border-color:rgba(59,130,246,0.2);">
         <h3 style="font-size:0.95rem;font-weight:700;margin-bottom:6px;">Backup Dati</h3>

@@ -2,29 +2,18 @@
 /**
  * O-CMS — Router
  *
- * Routes incoming HTTP requests to the appropriate handler callbacks.
- * Supports named parameters via {name} placeholders in URL patterns.
- *
- * @package O-CMS
- * @version 1.0.0
+ * Gestisce il routing delle richieste URL verso i controller appropriati.
  */
 class Router {
     private array $routes = [];
     private string $basePath;
 
-    /**
-     * @param string $basePath The URL base path to strip before matching (e.g. '/s')
-     */
     public function __construct(string $basePath = '') {
         $this->basePath = $basePath;
     }
 
     /**
-     * Register a GET route.
-     *
-     * @param string   $pattern URL pattern with optional {param} placeholders
-     * @param callable $handler Callback receiving matched parameters
-     * @return self
+     * Registra una rotta GET
      */
     public function get(string $pattern, callable $handler): self {
         $this->routes[] = ['method' => 'GET', 'pattern' => $pattern, 'handler' => $handler];
@@ -32,11 +21,7 @@ class Router {
     }
 
     /**
-     * Register a POST route.
-     *
-     * @param string   $pattern URL pattern with optional {param} placeholders
-     * @param callable $handler Callback receiving matched parameters
-     * @return self
+     * Registra una rotta POST
      */
     public function post(string $pattern, callable $handler): self {
         $this->routes[] = ['method' => 'POST', 'pattern' => $pattern, 'handler' => $handler];
@@ -44,11 +29,7 @@ class Router {
     }
 
     /**
-     * Register a route matching any HTTP method.
-     *
-     * @param string   $pattern URL pattern with optional {param} placeholders
-     * @param callable $handler Callback receiving matched parameters
-     * @return self
+     * Registra una rotta per qualsiasi metodo
      */
     public function any(string $pattern, callable $handler): self {
         $this->routes[] = ['method' => 'ANY', 'pattern' => $pattern, 'handler' => $handler];
@@ -56,9 +37,7 @@ class Router {
     }
 
     /**
-     * Dispatch the current HTTP request against registered routes.
-     *
-     * @return void
+     * Dispatch della richiesta corrente
      */
     public function dispatch(): void {
         $method = $_SERVER['REQUEST_METHOD'];
@@ -76,22 +55,20 @@ class Router {
             }
         }
 
-        // No matching route found — 404
+        // Nessuna rotta trovata — 404
         $this->notFound();
     }
 
     /**
-     * Extract the URI from the request, stripping the basePath and query string.
-     *
-     * @return string The cleaned URI path
+     * Estrae l'URI dalla richiesta, rimuovendo il basePath e query string
      */
     private function getUri(): string {
         $uri = $_SERVER['REQUEST_URI'] ?? '/';
 
-        // Remove query string
+        // Rimuovi query string
         $uri = strtok($uri, '?');
 
-        // Remove base path
+        // Rimuovi base path
         if ($this->basePath && strpos($uri, $this->basePath) === 0) {
             $uri = substr($uri, strlen($this->basePath));
         }
@@ -101,20 +78,17 @@ class Router {
     }
 
     /**
-     * Match a URL pattern against the given URI.
-     * Supports named parameters via {name} placeholders.
-     *
-     * @param string $pattern The route pattern to match
-     * @param string $uri     The request URI to test
-     * @return array|false Named parameters array on match, or false
+     * Verifica se un pattern corrisponde all'URI
+     * Supporta parametri con {name}
+     * Restituisce array di parametri o false
      */
     private function match(string $pattern, string $uri): array|false {
-        // Convert pattern to regex
+        // Converti pattern in regex
         $regex = preg_replace('/\{([a-zA-Z_]+)\}/', '(?P<$1>[^/]+)', $pattern);
         $regex = '#^' . $regex . '$#';
 
         if (preg_match($regex, $uri, $matches)) {
-            // Keep only named parameters
+            // Filtra solo i parametri nominati
             return array_filter($matches, 'is_string', ARRAY_FILTER_USE_KEY);
         }
 
@@ -122,13 +96,11 @@ class Router {
     }
 
     /**
-     * Render a 404 Not Found response.
-     *
-     * @return void
+     * Risposta 404
      */
     private function notFound(): void {
         http_response_code(404);
-        // TODO: render the active theme's 404 template
+        // TODO: renderizzare template 404 del tema attivo
         echo '<!DOCTYPE html><html><head><title>404</title></head><body><h1>Pagina non trovata</h1></body></html>';
     }
 }

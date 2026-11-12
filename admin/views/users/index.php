@@ -38,7 +38,7 @@ ob_start();
                         <?php endif; ?>
                     </td>
                     <td style="color:var(--text-muted);font-size:0.85rem;">
-                        <?= $u['last_login'] ? ocms_format_date($u['last_login']) : 'Mai' ?>
+                        <?= !empty($u['last_login']) ? ocms_format_date($u['last_login']) : 'Mai' ?>
                     </td>
                     <td>
                         <div style="display:flex;gap:8px;">

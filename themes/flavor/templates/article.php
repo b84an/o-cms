@@ -1,275 +1,219 @@
-<!DOCTYPE html>
-<html lang="<?= ocms_escape($app->config['language'] ?? 'it') ?>">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><?= ocms_escape($article['meta']['title'] ?? $article['title']) ?> — <?= ocms_escape($app->config['site_name'] ?? 'O-CMS') ?></title>
-    <meta name="description" content="<?= ocms_escape($article['meta']['description'] ?? $article['excerpt'] ?? '') ?>">
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="<?= ocms_base_url() ?>/themes/flavor/assets/css/style.css">
-    <style>
-        /* Galleria Lightbox */
-        .ocms-gallery { display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;margin:32px 0; }
-        .ocms-gallery-item { aspect-ratio:4/3;border-radius:10px;overflow:hidden;cursor:pointer;border:1px solid var(--border);transition:transform .2s,box-shadow .2s; }
-        .ocms-gallery-item:hover { transform:translateY(-2px);box-shadow:0 8px 24px rgba(0,0,0,.3); }
-        .ocms-gallery-item img { width:100%;height:100%;object-fit:cover; }
-        .ocms-lightbox { position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.92);display:none;align-items:center;justify-content:center;backdrop-filter:blur(8px); }
-        .ocms-lightbox.active { display:flex; }
-        .ocms-lightbox img { max-width:90vw;max-height:85vh;border-radius:12px;box-shadow:0 0 60px rgba(0,0,0,.5); }
-        .ocms-lb-close { position:absolute;top:20px;right:24px;width:40px;height:40px;border-radius:50%;border:none;background:rgba(255,255,255,.1);color:#fff;font-size:24px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background .2s; }
-        .ocms-lb-close:hover { background:rgba(255,255,255,.2); }
-        .ocms-lb-nav { position:absolute;top:50%;transform:translateY(-50%);width:48px;height:48px;border-radius:50%;border:none;background:rgba(255,255,255,.08);color:#fff;font-size:24px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background .2s; }
-        .ocms-lb-nav:hover { background:rgba(255,255,255,.15); }
-        .ocms-lb-prev { left:20px; }
-        .ocms-lb-next { right:20px; }
-        .ocms-lb-counter { position:absolute;bottom:20px;left:50%;transform:translateX(-50%);color:rgba(255,255,255,.6);font-size:.85rem; }
-        /* Commenti */
-        .ocms-comments { margin-top:48px;padding-top:32px;border-top:1px solid var(--border); }
-        .ocms-comment { display:flex;gap:14px;padding:16px 0;border-bottom:1px solid var(--border); }
-        .ocms-comment-avatar { width:40px;height:40px;border-radius:50%;flex-shrink:0;border:2px solid var(--border); }
-        .ocms-comment-body { flex:1; }
-        .ocms-comment-meta { font-size:.8rem;color:var(--text-muted);margin-bottom:6px;display:flex;gap:12px;align-items:center; }
-        .ocms-comment-text { font-size:.9rem;color:var(--text-muted);line-height:1.6; }
-        .ocms-reply { margin-left:54px;border-left:2px solid var(--border);padding-left:16px; }
-        .ocms-comment-form input, .ocms-comment-form textarea { width:100%;padding:10px 14px;background:var(--bg-light,#1e293b);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:inherit;font-size:.9rem;margin-bottom:12px;outline:none; }
-        .ocms-comment-form input:focus, .ocms-comment-form textarea:focus { border-color:var(--primary); }
-        .ocms-comment-form textarea { resize:vertical;min-height:80px; }
-    </style>
-</head>
-<body>
-    <?php include dirname(__DIR__) . '/partials/header.php'; ?>
+<?php
+require_once __DIR__ . '/_bootstrap.php';
+$slug      = (string) $article['slug'];
+$artUrl    = ocms_base_url() . '/blog/' . rawurlencode($slug);
+$metaTitle = ($article['meta']['title'] ?? '') ?: (string) $article['title'];
+$metaDesc  = ($article['meta']['description'] ?? '') ?: (string) ($article['excerpt'] ?? '');
+$mins      = flavor_read_time((string) ($article['content'] ?? ''));
+$commentsList = array_values(is_array($comments ?? null) ? $comments : []);
+$relatedList  = is_array($related ?? null) ? $related : [];
+$prev = $prevArticle ?? null;
+$next = $nextArticle ?? null;
+$gallery = is_array($article['gallery'] ?? null) ? array_values(array_filter($article['gallery'], fn($g) => is_array($g) && !empty($g['url']))) : [];
 
-    <main class="site-main">
-        <article class="page-content">
-            <div class="container">
-                <?php if (!empty($article['cover_image'])): ?>
-                    <img src="<?= ocms_base_url() . ocms_escape($article['cover_image']) ?>" alt="<?= ocms_escape($article['title']) ?>"
-                         style="width:100%;max-height:400px;object-fit:cover;border-radius:12px;margin-bottom:32px;">
-                <?php endif; ?>
+$catNames = [];
+foreach ($app->storage->findAll('categories') as $c) { $catNames[$c['slug'] ?? ''] = $c['name'] ?? ''; }
+$cat = (string) ($article['category'] ?? '');
+$author = (string) ($article['author'] ?? '');
+if ($author !== '') {
+    $u = $app->storage->find('users', $author);
+    if (is_array($u) && !empty($u['display_name'])) $author = (string) $u['display_name'];
+}
 
-                <div style="margin-bottom:16px;">
-                    <?php if (!empty($article['category'])): ?>
-                        <span style="color:var(--primary-light);font-size:0.85rem;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;"><?= ocms_escape($article['category']) ?></span>
-                    <?php endif; ?>
+$flashes = ocms_flash_get();
+$captcha = ocms_captcha_generate(); // una sola domanda per tutta la pagina
+
+$flavor = [
+    'title'       => $metaTitle,
+    'description' => $metaDesc,
+    'seo'         => [
+        'type'        => 'article',
+        'title'       => $metaTitle,
+        'description' => $metaDesc,
+        'image'       => ($article['meta']['og_image'] ?? '') ?: ($article['cover_image'] ?? ''),
+        'published'   => $article['created_at'] ?? '',
+        'modified'    => $article['updated_at'] ?? '',
+        'author'      => $author,
+    ],
+    'bodyClass'   => 'page-article',
+    'progress'    => true,
+];
+include __DIR__ . '/_header.php';
+
+$roots = [];
+$replies = [];
+foreach ($commentsList as $c) {
+    if (!empty($c['parent_id'])) $replies[(string) $c['parent_id']][] = $c; else $roots[] = $c;
+}
+// Risposte il cui commento padre non è visibile: mostrale comunque, come commenti principali
+$rootIds = array_map(fn($c) => (string) ($c['id'] ?? ''), $roots);
+foreach ($replies as $pid => $list) {
+    if (!in_array((string) $pid, $rootIds, true)) { foreach ($list as $r) $roots[] = $r; unset($replies[$pid]); }
+}
+
+$commentForm = function (string $parentId, string $idSuffix) use ($slug, $captcha): string {
+    $action = ocms_base_url() . '/blog/' . rawurlencode($slug) . '/comment';
+    $isReply = $parentId !== '';
+    ob_start(); ?>
+        <form class="comment-form" method="post" action="<?= ocms_escape($action) ?>">
+            <?= ocms_csrf_field() ?>
+            <input type="hidden" name="parent_id" value="<?= ocms_escape($parentId) ?>">
+            <div class="form-row">
+                <div class="field">
+                    <label for="cn-<?= $idSuffix ?>">Nome <span aria-hidden="true">*</span></label>
+                    <input id="cn-<?= $idSuffix ?>" type="text" name="author_name" required maxlength="100" autocomplete="name">
                 </div>
-
-                <h1><?= ocms_escape($article['title']) ?></h1>
-
-                <?php $readTime = max(1, round(str_word_count(strip_tags($article['content'] ?? '')) / 200)); ?>
-                <div style="color:var(--text-muted);font-size:0.85rem;margin-bottom:40px;display:flex;gap:16px;align-items:center;">
-                    <span><?= ocms_format_date($article['created_at'], 'd M Y') ?></span>
-                    <?php if (!empty($article['author'])): ?>
-                        <span>di <?= ocms_escape($article['author']) ?></span>
-                    <?php endif; ?>
-                    <span style="display:inline-flex;align-items:center;gap:4px;">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                        <?= $readTime ?> min di lettura
-                    </span>
-                </div>
-
-                <div class="content">
-                    <?= $article['content'] ?>
-                </div>
-
-                <?php /* ─── GALLERIA ─── */ ?>
-                <?php $gallery = $article['gallery'] ?? []; ?>
-                <?php if (!empty($gallery)): ?>
-                <div class="ocms-gallery">
-                    <?php foreach ($gallery as $i => $img): ?>
-                    <div class="ocms-gallery-item" onclick="openLightbox(<?= $i ?>)">
-                        <img src="<?= ocms_base_url() . ocms_escape($img['thumb'] ?? $img['url']) ?>" alt="<?= ocms_escape($img['name'] ?? '') ?>" loading="lazy">
-                    </div>
-                    <?php endforeach; ?>
-                </div>
-
-                <!-- Lightbox -->
-                <div class="ocms-lightbox" id="lightbox">
-                    <button class="ocms-lb-close" onclick="closeLightbox()">&times;</button>
-                    <button class="ocms-lb-nav ocms-lb-prev" onclick="navLightbox(-1)">&#8249;</button>
-                    <img id="lb-img" src="" alt="">
-                    <button class="ocms-lb-nav ocms-lb-next" onclick="navLightbox(1)">&#8250;</button>
-                    <div class="ocms-lb-counter"><span id="lb-counter"></span></div>
-                </div>
-                <?php endif; ?>
-
-                <?php if (!empty($article['tags'])): ?>
-                <div style="margin-top:40px;padding-top:24px;border-top:1px solid var(--border);display:flex;gap:8px;flex-wrap:wrap;">
-                    <?php foreach ($article['tags'] as $tag): ?>
-                        <span style="padding:4px 12px;background:rgba(99,102,241,0.1);border-radius:6px;font-size:0.8rem;color:var(--primary-light);"><?= ocms_escape($tag) ?></span>
-                    <?php endforeach; ?>
-                </div>
-                <?php endif; ?>
-
-                <?php /* ─── COMMENTI ─── */ ?>
-                <div class="ocms-comments" id="comments">
-                    <h3 style="font-size:1.2rem;font-weight:700;margin-bottom:24px;">
-                        Commenti
-                        <?php $commentsList = $comments ?? []; ?>
-                        <?php if (!empty($commentsList)): ?>
-                        <span style="font-size:.85rem;font-weight:400;color:var(--text-muted);margin-left:8px;">(<?= count($commentsList) ?>)</span>
-                        <?php endif; ?>
-                    </h3>
-
-                    <?php if (!empty($commentsList)): ?>
-                        <?php
-                        // Separa commenti root e risposte
-                        $roots = array_filter($commentsList, fn($c) => empty($c['parent_id']));
-                        $replies = [];
-                        foreach ($commentsList as $c) {
-                            if (!empty($c['parent_id'])) {
-                                $replies[$c['parent_id']][] = $c;
-                            }
-                        }
-                        ?>
-                        <?php foreach ($roots as $c):
-                            $hash = md5(strtolower(trim($c['author_email'] ?? '')));
-                        ?>
-                        <div class="ocms-comment">
-                            <img src="https://www.gravatar.com/avatar/<?= $hash ?>?s=40&d=mp" class="ocms-comment-avatar" alt="">
-                            <div class="ocms-comment-body">
-                                <div class="ocms-comment-meta">
-                                    <strong style="color:var(--text);"><?= ocms_escape($c['author_name']) ?></strong>
-                                    <span><?= ocms_format_date($c['created_at'], 'd M Y, H:i') ?></span>
-                                </div>
-                                <div class="ocms-comment-text"><?= nl2br(ocms_escape($c['body'])) ?></div>
-                                <button type="button" onclick="showReplyForm('<?= ocms_escape($c['id']) ?>')" style="background:none;border:none;color:var(--primary-light);font-size:.8rem;cursor:pointer;padding:6px 0;font-family:inherit;">Rispondi</button>
-
-                                <?php /* Form risposta inline */ ?>
-                                <div id="reply-<?= ocms_escape($c['id']) ?>" style="display:none;margin-top:12px;">
-                                    <?php $captchaReply = ocms_captcha_generate(); ?>
-                                    <form method="POST" action="<?= ocms_base_url() ?>/blog/<?= ocms_escape($article['slug']) ?>/comment" class="ocms-comment-form">
-                                        <?= ocms_csrf_field() ?>
-                                        <input type="hidden" name="parent_id" value="<?= ocms_escape($c['id']) ?>">
-                                        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
-                                            <input type="text" name="author_name" placeholder="Nome *" required>
-                                            <input type="email" name="author_email" placeholder="Email (opzionale)">
-                                        </div>
-                                        <textarea name="comment_body" placeholder="La tua risposta..." required></textarea>
-                                        <div style="display:flex;gap:10px;align-items:center;">
-                                            <label style="font-size:.85rem;color:var(--text-muted);white-space:nowrap;"><?= $captchaReply['question'] ?></label>
-                                            <input type="text" name="captcha" required style="width:80px;" placeholder="?">
-                                            <button type="submit" class="btn-primary" style="padding:8px 20px;border-radius:8px;font-size:.85rem;">Invia</button>
-                                        </div>
-                                    </form>
-                                </div>
-                            </div>
-                        </div>
-
-                        <?php /* Risposte */ ?>
-                        <?php if (!empty($replies[$c['id']])): ?>
-                            <?php foreach ($replies[$c['id']] as $r):
-                                $rHash = md5(strtolower(trim($r['author_email'] ?? '')));
-                            ?>
-                            <div class="ocms-comment ocms-reply">
-                                <img src="https://www.gravatar.com/avatar/<?= $rHash ?>?s=40&d=mp" class="ocms-comment-avatar" alt="">
-                                <div class="ocms-comment-body">
-                                    <div class="ocms-comment-meta">
-                                        <strong style="color:var(--text);"><?= ocms_escape($r['author_name']) ?></strong>
-                                        <span><?= ocms_format_date($r['created_at'], 'd M Y, H:i') ?></span>
-                                    </div>
-                                    <div class="ocms-comment-text"><?= nl2br(ocms_escape($r['body'])) ?></div>
-                                </div>
-                            </div>
-                            <?php endforeach; ?>
-                        <?php endif; ?>
-                        <?php endforeach; ?>
-                    <?php endif; ?>
-
-                    <!-- Form nuovo commento -->
-                    <div style="margin-top:32px;">
-                        <h4 style="font-size:1rem;font-weight:600;margin-bottom:16px;">Lascia un commento</h4>
-                        <?php
-                        foreach (ocms_flash_get() as $flash) {
-                            $fClass = $flash['type'] === 'error' ? 'color:#ef4444;' : 'color:var(--success);';
-                            echo '<p style="'.$fClass.'font-size:.85rem;margin-bottom:12px;">' . ocms_escape($flash['message']) . '</p>';
-                        }
-                        $captcha = ocms_captcha_generate();
-                        ?>
-                        <form method="POST" action="<?= ocms_base_url() ?>/blog/<?= ocms_escape($article['slug']) ?>/comment" class="ocms-comment-form">
-                            <?= ocms_csrf_field() ?>
-                            <input type="hidden" name="parent_id" value="">
-                            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
-                                <input type="text" name="author_name" placeholder="Nome *" required>
-                                <input type="email" name="author_email" placeholder="Email (opzionale)">
-                            </div>
-                            <textarea name="comment_body" placeholder="Il tuo commento..." required></textarea>
-                            <div style="display:flex;gap:10px;align-items:center;">
-                                <label style="font-size:.85rem;color:var(--text-muted);white-space:nowrap;"><?= $captcha['question'] ?></label>
-                                <input type="text" name="captcha" required style="width:80px;" placeholder="?">
-                                <button type="submit" class="btn-primary" style="padding:10px 24px;border-radius:8px;">Invia commento</button>
-                            </div>
-                        </form>
-                    </div>
-                </div>
-
-                <?php /* ─── ARTICOLI CORRELATI ─── */ ?>
-                <?php $relatedList = $related ?? []; ?>
-                <?php if (!empty($relatedList)): ?>
-                <div style="margin-top:48px;padding-top:32px;border-top:1px solid var(--border);">
-                    <h3 style="font-size:1.1rem;font-weight:700;margin-bottom:20px;">Potrebbe interessarti</h3>
-                    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:16px;">
-                        <?php foreach ($relatedList as $rel): ?>
-                        <a href="<?= ocms_base_url() ?>/blog/<?= ocms_escape($rel['slug']) ?>" style="display:flex;gap:14px;align-items:center;padding:14px;background:var(--bg-light,#1e293b);border:1px solid var(--border);border-radius:12px;text-decoration:none;transition:transform .15s,box-shadow .15s;">
-                            <?php if (!empty($rel['cover_image'])): ?>
-                            <img src="<?= ocms_base_url() . ocms_escape($rel['cover_image']) ?>" alt="" style="width:72px;height:54px;object-fit:cover;border-radius:8px;flex-shrink:0;">
-                            <?php endif; ?>
-                            <div>
-                                <div style="font-size:0.9rem;font-weight:600;color:var(--text);line-height:1.3;margin-bottom:4px;"><?= ocms_escape($rel['title']) ?></div>
-                                <div style="font-size:0.75rem;color:var(--text-muted);"><?= ocms_format_date($rel['created_at'], 'd M Y') ?></div>
-                            </div>
-                        </a>
-                        <?php endforeach; ?>
-                    </div>
-                </div>
-                <?php endif; ?>
-
-                <?php /* ─── PREV / NEXT ─── */ ?>
-                <?php $prev = $prevArticle ?? null; $next = $nextArticle ?? null; ?>
-                <?php if ($prev || $next): ?>
-                <div style="margin-top:40px;padding-top:32px;border-top:1px solid var(--border);display:grid;grid-template-columns:1fr 1fr;gap:16px;">
-                    <?php if ($prev): ?>
-                    <a href="<?= ocms_base_url() ?>/blog/<?= ocms_escape($prev['slug']) ?>" style="display:flex;flex-direction:column;padding:16px;background:var(--bg-light,#1e293b);border:1px solid var(--border);border-radius:12px;text-decoration:none;transition:transform .15s;">
-                        <span style="font-size:0.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">&larr; Precedente</span>
-                        <span style="font-size:0.9rem;font-weight:600;color:var(--text);line-height:1.3;"><?= ocms_escape(ocms_truncate($prev['title'], 60)) ?></span>
-                    </a>
-                    <?php else: ?><div></div><?php endif; ?>
-                    <?php if ($next): ?>
-                    <a href="<?= ocms_base_url() ?>/blog/<?= ocms_escape($next['slug']) ?>" style="display:flex;flex-direction:column;padding:16px;background:var(--bg-light,#1e293b);border:1px solid var(--border);border-radius:12px;text-decoration:none;text-align:right;transition:transform .15s;">
-                        <span style="font-size:0.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">Successivo &rarr;</span>
-                        <span style="font-size:0.9rem;font-weight:600;color:var(--text);line-height:1.3;"><?= ocms_escape(ocms_truncate($next['title'], 60)) ?></span>
-                    </a>
-                    <?php else: ?><div></div><?php endif; ?>
-                </div>
-                <?php endif; ?>
-
-                <div style="margin-top:24px;">
-                    <a href="<?= ocms_base_url() ?>/blog" style="color:var(--text-muted);font-size:0.9rem;">&larr; Torna al blog</a>
+                <div class="field">
+                    <label for="ce-<?= $idSuffix ?>">Email <span class="field-opt">(facoltativa, non pubblicata)</span></label>
+                    <input id="ce-<?= $idSuffix ?>" type="email" name="author_email" maxlength="200" autocomplete="email">
                 </div>
             </div>
-        </article>
-    </main>
+            <div class="field">
+                <label for="cb-<?= $idSuffix ?>"><?= $isReply ? 'La tua risposta' : 'Il tuo commento' ?> <span aria-hidden="true">*</span></label>
+                <textarea id="cb-<?= $idSuffix ?>" name="comment_body" rows="<?= $isReply ? 3 : 5 ?>" required maxlength="5000"></textarea>
+            </div>
+            <div class="form-foot">
+                <div class="field field-captcha">
+                    <label for="cc-<?= $idSuffix ?>">Verifica: quanto fa <?= ocms_escape(str_replace(' = ?', '', (string) $captcha['question'])) ?>?</label>
+                    <input id="cc-<?= $idSuffix ?>" type="text" name="captcha" required inputmode="numeric" autocomplete="off" maxlength="4">
+                </div>
+                <button class="btn btn-primary" type="submit"><?= $isReply ? 'Invia la risposta' : 'Pubblica il commento' ?></button>
+            </div>
+            <p class="form-note">I commenti compaiono dopo l'approvazione.</p>
+        </form>
+<?php return (string) ob_get_clean();
+};
+$renderComment = function (array $c, bool $isReply) use ($replies, $commentForm, &$renderComment): string {
+    $id = (string) ($c['id'] ?? '');
+    $domId = 'comment-' . preg_replace('/[^a-zA-Z0-9_-]/', '', $id);
+    ob_start(); ?>
+        <li class="comment<?= $isReply ? ' comment-reply' : '' ?><?= !empty($c['is_admin_reply']) ? ' is-staff' : '' ?>" id="<?= ocms_escape($domId) ?>">
+            <div class="comment-avatar" aria-hidden="true"><?= ocms_escape(flavor_initials((string) ($c['author_name'] ?? ''))) ?></div>
+            <div class="comment-main">
+                <p class="comment-head">
+                    <strong><?= ocms_escape($c['author_name'] ?? 'Anonimo') ?></strong>
+<?php if (!empty($c['is_admin_reply'])): ?>
+                    <span class="badge">Autore</span>
+<?php endif; ?>
+                    <time datetime="<?= ocms_escape(flavor_datetime($c['created_at'] ?? '')) ?>"><?= ocms_escape(flavor_date($c['created_at'] ?? '', true)) ?></time>
+                </p>
+                <div class="comment-body"><?= nl2br(ocms_escape($c['body'] ?? '')) ?></div>
+<?php if (!$isReply && $id !== ''): ?>
+                <button class="link-btn" type="button" data-reply-toggle aria-expanded="false" aria-controls="reply-<?= ocms_escape($domId) ?>"><?= flavor_icon('reply', 15) ?>Rispondi</button>
+                <div class="reply-box" id="reply-<?= ocms_escape($domId) ?>" hidden>
+                    <?= $commentForm($id, 'r' . substr(md5($id), 0, 8)) ?>
+                </div>
+<?php endif; ?>
+<?php if (!$isReply && !empty($replies[$id])): ?>
+                <ol class="comment-replies">
+<?php foreach ($replies[$id] as $r) echo $renderComment($r, true); ?>
+                </ol>
+<?php endif; ?>
+            </div>
+        </li>
+<?php return (string) ob_get_clean();
+};
+?>
+<article class="article" itemscope itemtype="https://schema.org/BlogPosting">
+    <header class="article-hero wrap">
+        <nav class="crumbs" aria-label="Percorso">
+            <a href="<?= ocms_base_url() ?>/blog">Blog</a>
+<?php if ($cat !== ''): ?>
+            <span aria-hidden="true">/</span>
+            <a href="<?= ocms_base_url() ?>/blog?cat=<?= rawurlencode($cat) ?>"><?= ocms_escape($catNames[$cat] ?? ucfirst($cat)) ?></a>
+<?php endif; ?>
+        </nav>
+        <h1 class="display article-title" itemprop="headline"><?= ocms_escape($article['title']) ?></h1>
+<?php if (flavor_plain($article['excerpt'] ?? '') !== ''): ?>
+        <p class="dek" itemprop="description"><?= ocms_escape(flavor_plain($article['excerpt'])) ?></p>
+<?php endif; ?>
+        <ul class="meta-row">
+<?php if (!empty($article['created_at'])): ?>
+            <li><?= flavor_icon('calendar', 16) ?><time datetime="<?= ocms_escape(flavor_datetime($article['created_at'])) ?>" itemprop="datePublished"><?= ocms_escape(flavor_date($article['created_at'])) ?></time></li>
+<?php endif; ?>
+<?php if ($author !== ''): ?>
+            <li><?= flavor_icon('user', 16) ?><span itemprop="author"><?= ocms_escape($author) ?></span></li>
+<?php endif; ?>
+            <li><?= flavor_icon('clock', 16) ?><span><?= $mins ?> min di lettura</span></li>
+<?php if (($article['views'] ?? 0) > 0): ?>
+            <li><?= flavor_icon('eye', 16) ?><span><?= number_format((int) $article['views'], 0, ',', '.') ?> letture</span></li>
+<?php endif; ?>
+        </ul>
+        <div class="article-cover">
+            <?= flavor_cover($article, ['class' => 'cover', 'vt' => true, 'eager' => true, 'alt' => '', 'sizes' => '(min-width: 1200px) 1100px, 100vw']) ?>
+        </div>
+    </header>
 
-    <?php include dirname(__DIR__) . '/partials/footer.php'; ?>
+    <div class="wrap article-layout">
+        <div class="prose article-body" itemprop="articleBody">
+            <?= flavor_content((string) ($article['content'] ?? '')) ?>
+        </div>
 
-    <?php if (!empty($gallery)): ?>
-    <script>
-    const galleryUrls = <?= json_encode(array_map(fn($img) => ocms_base_url() . $img['url'], $gallery)) ?>;
-    let lbIndex = 0;
-    const lb = document.getElementById('lightbox');
-    const lbImg = document.getElementById('lb-img');
-    const lbCounter = document.getElementById('lb-counter');
+<?php if ($gallery): ?>
+        <section class="article-gallery" aria-label="Galleria fotografica">
+            <ul class="thumb-grid">
+<?php foreach ($gallery as $img):
+    $full = flavor_media((string) $img['url']);
+    $thumb = flavor_media((string) ($img['thumb'] ?? $img['url']));
+    $alt = (string) ($img['name'] ?? ''); ?>
+                <li><a href="<?= ocms_escape($full) ?>" data-lightbox="article" data-caption="<?= ocms_escape($alt) ?>"><img src="<?= ocms_escape($thumb) ?>" alt="<?= ocms_escape($alt) ?>" loading="lazy" decoding="async"></a></li>
+<?php endforeach; ?>
+            </ul>
+        </section>
+<?php endif; ?>
 
-    function openLightbox(i) { lbIndex = i; lbImg.src = galleryUrls[i]; lbCounter.textContent = (i+1)+' / '+galleryUrls.length; lb.classList.add('active'); document.body.style.overflow='hidden'; }
-    function closeLightbox() { lb.classList.remove('active'); document.body.style.overflow=''; }
-    function navLightbox(dir) { lbIndex = (lbIndex+dir+galleryUrls.length)%galleryUrls.length; lbImg.src=galleryUrls[lbIndex]; lbCounter.textContent=(lbIndex+1)+' / '+galleryUrls.length; }
-    function showReplyForm(id) { const el = document.getElementById('reply-'+id); el.style.display = el.style.display==='none'?'block':'none'; }
+<?php if (!empty($article['tags']) && is_array($article['tags'])): ?>
+        <div class="article-tags">
+            <h2 class="sr-only">Tag</h2>
+            <ul class="tag-list">
+<?php foreach ($article['tags'] as $tag): if (!is_string($tag) || trim($tag) === '') continue; ?>
+                <li><a class="tag" href="<?= ocms_base_url() ?>/blog?tag=<?= rawurlencode(ocms_slug($tag)) ?>"><?= ocms_escape(flavor_tag_label($tag)) ?></a></li>
+<?php endforeach; ?>
+            </ul>
+        </div>
+<?php endif; ?>
 
-    lb.addEventListener('click', e => { if (e.target === lb) closeLightbox(); });
-    document.addEventListener('keydown', e => { if (!lb.classList.contains('active')) return; if (e.key==='Escape') closeLightbox(); if (e.key==='ArrowLeft') navLightbox(-1); if (e.key==='ArrowRight') navLightbox(1); });
-    </script>
-    <?php else: ?>
-    <script>function showReplyForm(id) { const el = document.getElementById('reply-'+id); el.style.display = el.style.display==='none'?'block':'none'; }</script>
-    <?php endif; ?>
-</body>
-</html>
+<?php if ($prev || $next): ?>
+        <nav class="post-nav" aria-label="Altri articoli">
+<?php if ($prev): ?>
+            <a class="post-nav-link is-prev" href="<?= ocms_base_url() ?>/blog/<?= rawurlencode((string) $prev['slug']) ?>" rel="prev">
+                <span class="post-nav-dir"><?= flavor_icon('left', 16) ?>Più recente</span>
+                <span class="post-nav-title"><?= ocms_escape(ocms_truncate((string) $prev['title'], 90)) ?></span>
+            </a>
+<?php endif; ?>
+<?php if ($next): ?>
+            <a class="post-nav-link is-next" href="<?= ocms_base_url() ?>/blog/<?= rawurlencode((string) $next['slug']) ?>" rel="next">
+                <span class="post-nav-dir">Meno recente<?= flavor_icon('right', 16) ?></span>
+                <span class="post-nav-title"><?= ocms_escape(ocms_truncate((string) $next['title'], 90)) ?></span>
+            </a>
+<?php endif; ?>
+        </nav>
+<?php endif; ?>
+
+        <section class="comments" id="comments" aria-labelledby="comments-title">
+            <h2 id="comments-title">Commenti<?php if ($commentsList): ?> <span class="count"><?= count($commentsList) ?></span><?php endif; ?></h2>
+            <?= flavor_flashes($flashes) ?>
+<?php if ($roots): ?>
+            <ol class="comment-list">
+<?php foreach ($roots as $c) echo $renderComment($c, false); ?>
+            </ol>
+<?php else: ?>
+            <p class="muted">Ancora nessun commento. Il primo è sempre il più difficile.</p>
+<?php endif; ?>
+            <div class="comment-new ocms-glass">
+                <h3>Lascia un commento</h3>
+                <?= $commentForm('', 'main') ?>
+            </div>
+        </section>
+    </div>
+
+<?php if ($relatedList): ?>
+    <section class="wrap related" aria-labelledby="related-title">
+        <h2 id="related-title">Potrebbe interessarti</h2>
+        <div class="post-grid post-grid-related">
+<?php foreach ($relatedList as $rel) echo flavor_article_card($rel, ['variant' => 'compact', 'heading' => 'h3', 'catNames' => $catNames, 'hideFeatured' => true]); ?>
+        </div>
+    </section>
+<?php endif; ?>
+</article>
+<?php include __DIR__ . '/_footer.php'; ?>

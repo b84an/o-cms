@@ -59,7 +59,7 @@ ob_start();
             <!-- Griglia -->
             <?php for ($g = 0; $g <= 4; $g++): ?>
                 <?php $gy = $chartH - ($chartH / 4 * $g); ?>
-                <line x1="40" y1="<?= $gy ?>" x2="<?= $chartW ?>" y2="<?= $gy ?>" stroke="rgba(255,255,255,0.06)" stroke-width="1"/>
+                <line x1="40" y1="<?= $gy ?>" x2="<?= $chartW ?>" y2="<?= $gy ?>" style="stroke:var(--border)" stroke-width="1"/>
                 <text x="36" y="<?= $gy + 4 ?>" fill="#94a3b8" font-size="10" text-anchor="end"><?= round($safeMax / 4 * $g) ?></text>
             <?php endfor; ?>
 
@@ -98,7 +98,7 @@ ob_start();
             <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px;">
                 <div style="flex:1;min-width:0;">
                     <div style="font-size:0.85rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="<?= ocms_escape($path) ?>"><?= ocms_escape($path) ?></div>
-                    <div style="margin-top:4px;height:4px;background:rgba(255,255,255,0.06);border-radius:2px;overflow:hidden;">
+                    <div style="margin-top:4px;height:4px;background:var(--bg-light);border-radius:2px;overflow:hidden;">
                         <div style="height:100%;width:<?= round($count / $topPage * 100) ?>%;background:var(--primary);border-radius:2px;"></div>
                     </div>
                 </div>

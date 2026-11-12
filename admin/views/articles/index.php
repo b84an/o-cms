@@ -19,17 +19,17 @@ ob_start();
 ?>
 
 <div class="page-header">
-    <h1>Articoli <span style="font-weight:400;font-size:0.9rem;color:var(--text-muted);">(<?= count($filteredArticles) ?><?= $filterCat ? ' di ' . count($articles) : '' ?>)</span></h1>
-    <div style="display:flex;gap:10px;">
+    <h1>Articoli <span class="text-muted text-sm text-normal">(<?= count($filteredArticles) ?><?= $filterCat ? ' di ' . count($articles) : '' ?>)</span></h1>
+    <div class="btn-row">
         <a href="<?= ocms_base_url() ?>/admin/categories" class="btn btn-secondary">Categorie</a>
         <a href="<?= ocms_base_url() ?>/admin/articles/new" class="btn btn-primary">+ Nuovo Articolo</a>
     </div>
 </div>
 
 <!-- Filtro categoria -->
-<div class="card" style="padding:12px 16px;margin-bottom:16px;">
-    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
-        <span style="font-size:0.85rem;font-weight:600;color:var(--text-muted);">Filtra:</span>
+<div class="card card-compact mb-16">
+    <div class="btn-row">
+        <span class="text-sm text-muted"><strong>Filtra:</strong></span>
         <a href="<?= ocms_base_url() ?>/admin/articles" class="btn btn-sm <?= $filterCat === '' ? 'btn-primary' : 'btn-secondary' ?>">Tutte (<?= count($articles) ?>)</a>
         <?php foreach ($categories as $c):
             $count = 0;
@@ -77,10 +77,10 @@ if ($filterCat === '__none__') {
     <form method="POST" action="<?= ocms_base_url() ?>/admin/articles/bulk-move" id="bulk-form">
         <?= ocms_csrf_field() ?>
         <input type="hidden" name="return_cat" value="<?= ocms_escape($filterCat) ?>">
-        <div id="bulk-bar" style="display:none;margin-bottom:12px;">
-            <div class="card" style="padding:10px 16px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
-                <span style="font-size:0.85rem;font-weight:600;"><span id="bulk-count">0</span> selezionati</span>
-                <select name="new_category" class="form-input" style="width:auto;padding:6px 10px;font-size:0.85rem;">
+        <div id="bulk-bar" class="mb-12" style="display:none;">
+            <div class="card card-compact btn-row">
+                <span class="text-sm"><strong><span id="bulk-count">0</span> selezionati</strong></span>
+                <select name="new_category" class="form-select select-sm">
                     <option value="">Sposta in categoria...</option>
                     <?php foreach ($categories as $c): ?>
                         <option value="<?= ocms_escape($c['slug']) ?>"><?= ocms_escape($c['name']) ?></option>
@@ -97,7 +97,7 @@ if ($filterCat === '__none__') {
                 <table class="data-table">
                     <thead>
                         <tr>
-                            <th style="width:32px;"><input type="checkbox" id="select-all" title="Seleziona tutti"></th>
+                            <th class="col-check"><input type="checkbox" id="select-all" title="Seleziona tutti" aria-label="Seleziona tutti"></th>
                             <th>Titolo</th>
                             <th>Categoria</th>
                             <th>Stato</th>
@@ -108,37 +108,41 @@ if ($filterCat === '__none__') {
                     <tbody>
                         <?php foreach ($filteredArticles as $a): ?>
                         <tr>
-                            <td><input type="checkbox" name="slugs[]" value="<?= ocms_escape($a['slug']) ?>" class="article-check"></td>
+                            <td><input type="checkbox" name="slugs[]" value="<?= ocms_escape($a['slug']) ?>" class="article-check" aria-label="Seleziona <?= ocms_escape($a['title']) ?>"></td>
                             <td>
-                                <a href="<?= ocms_base_url() ?>/admin/articles/edit/<?= ocms_escape($a['slug']) ?>" style="font-weight:600;color:var(--text);">
-                                    <?php if (!empty($a['featured'])): ?><svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="#f59e0b" stroke="#f59e0b" stroke-width="2" style="vertical-align:-1px;margin-right:4px;"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg><?php endif; ?><?= ocms_escape($a['title']) ?>
+                                <a href="<?= ocms_base_url() ?>/admin/articles/edit/<?= ocms_escape($a['slug']) ?>" class="row-title">
+                                    <?php if (!empty($a['featured'])): ?><svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="#f59e0b" stroke="#f59e0b" stroke-width="2" class="star-icon" aria-label="In evidenza"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg><?php endif; ?><?= ocms_escape($a['title']) ?>
                                 </a>
                                 <?php if (!empty($a['excerpt'])): ?>
-                                    <div style="font-size:0.8rem;color:var(--text-muted);margin-top:2px;"><?= ocms_escape(ocms_truncate($a['excerpt'], 80)) ?></div>
+                                    <div class="row-sub"><?= ocms_escape(ocms_truncate($a['excerpt'], 80)) ?></div>
                                 <?php endif; ?>
                             </td>
                             <td>
                                 <?php if (!empty($a['category'])): ?>
-                                    <a href="<?= ocms_base_url() ?>/admin/articles?cat=<?= ocms_escape($a['category']) ?>" class="badge badge-published" style="text-decoration:none;">
+                                    <a href="<?= ocms_base_url() ?>/admin/articles?cat=<?= ocms_escape($a['category']) ?>" class="badge badge-category">
                                         <?= ocms_escape($catMap[$a['category']] ?? $a['category']) ?>
                                     </a>
                                 <?php else: ?>
-                                    <span style="color:var(--text-muted);font-size:0.8rem;">—</span>
+                                    <span class="text-muted text-sm">—</span>
                                 <?php endif; ?>
                             </td>
                             <td>
+                                <?php if ($a['status'] === 'published' && ocms_is_future($a['publish_at'] ?? null)): ?>
+                                <span class="badge badge-scheduled" title="Esce il <?= ocms_escape(date('d/m/Y \a\l\l\e H:i', strtotime($a['publish_at']))) ?>">Programmato</span>
+                                <?php else: ?>
                                 <span class="badge <?= $a['status'] === 'published' ? 'badge-published' : 'badge-draft' ?>">
                                     <?= $a['status'] === 'published' ? 'Pubblicato' : 'Bozza' ?>
                                 </span>
+                                <?php endif; ?>
                             </td>
-                            <td style="color:var(--text-muted);font-size:0.85rem;">
-                                <?= ocms_format_date($a['updated_at']) ?>
+                            <td class="col-date">
+                                <?= !empty($a['updated_at']) ? ocms_format_date($a['updated_at']) : '—' ?>
                             </td>
                             <td>
-                                <div style="display:flex;gap:8px;">
+                                <div class="row-actions">
                                     <a href="<?= ocms_base_url() ?>/admin/articles/edit/<?= ocms_escape($a['slug']) ?>" class="btn btn-secondary btn-sm">Modifica</a>
                                     <form method="POST" action="<?= ocms_base_url() ?>/admin/articles/delete/<?= ocms_escape($a['slug']) ?>"
-                                          onsubmit="return confirm('Eliminare questo articolo?');" style="display:inline;">
+                                          onsubmit="return confirm('Eliminare questo articolo?');">
                                         <?= ocms_csrf_field() ?>
                                         <button type="submit" class="btn btn-danger btn-sm">Elimina</button>
                                     </form>

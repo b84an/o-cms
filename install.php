@@ -15,7 +15,7 @@
  *   7. Installazione completata
  *
  * @package O-CMS
- * @version 1.0.0
+ * @version 2.0.0
  */
 
 set_time_limit(120);
@@ -226,7 +226,8 @@ if ($step === 7) {
         'data/layouts', 'data/lessons', 'data/logs', 'data/media', 'data/menus',
         'data/pages', 'data/quiz-results', 'data/quizzes', 'data/revisions',
         'data/snippets', 'data/tags', 'data/translations', 'data/users', 'data/widgets',
-        'uploads', 'uploads/images', 'uploads/documents', 'uploads/media',
+        'data/fogliofirme',
+        'uploads', 'uploads/images', 'uploads/documents', 'uploads/media', 'uploads/lezioni', 'uploads/gallery',
         'extensions',
     ];
     foreach ($dirs as $d) {
@@ -281,7 +282,7 @@ if ($step === 7) {
             'instructions' => '',
         ],
         'installation_notified' => false,
-        'ocms_version'          => '1.0.0',
+        'ocms_version'          => '2.0.0',
     ];
     if (file_put_contents($baseDir . '/data/config.json', json_encode($config, $jsonFlags)) === false) {
         $installWarnings[] = 'Impossibile scrivere config.json';
@@ -916,7 +917,7 @@ $stepLabels = [1 => 'Requisiti', 2 => 'Sito', 3 => 'Admin', 4 => 'Email', 5 => '
     <?php endif; ?>
 
     <p style="text-align:center;color:var(--text-muted);font-size:0.7rem;margin-top:20px;">
-        O-CMS v1.0.0 &mdash; Un CMS flat-file di <a href="https://github.com/b84an/o-cms" style="color:var(--primary);text-decoration:none;">Ivan Bertotto</a>
+        O-CMS v2.0 &mdash; Un CMS flat-file di <a href="https://github.com/b84an/o-cms" style="color:var(--primary);text-decoration:none;">Ivan Bertotto</a>
     </p>
 </div>
 </body>

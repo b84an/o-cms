@@ -93,6 +93,7 @@ document.addEventListener('DOMContentLoaded', function() {
     let fields = <?= json_encode($form['fields'], JSON_UNESCAPED_UNICODE) ?>;
     const formId = '<?= ocms_escape($form['id']) ?>';
     const createdAt = '<?= ocms_escape($form['created_at']) ?>';
+    const originalSlug = <?= json_encode((string)($form['slug'] ?? ''), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
 
     function uid() { return 'f' + Math.random().toString(36).substr(2,8); }
 
@@ -158,7 +159,7 @@ document.addEventListener('DOMContentLoaded', function() {
             const res = await fetch(BASE + '/admin/forms/save', {
                 method: 'POST', headers: {'Content-Type':'application/json'},
                 body: JSON.stringify({
-                    _csrf_token: CSRF, id: formId, name, fields, created_at: createdAt,
+                    _csrf_token: CSRF, id: formId, original_slug: originalSlug, name, fields, created_at: createdAt,
                     settings: {
                         notify_email: document.getElementById('notify-email').value,
                         success_message: document.getElementById('success-msg').value,

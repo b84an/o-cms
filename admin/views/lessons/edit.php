@@ -168,7 +168,7 @@ ob_start();
 <script>
 const SLUG = '<?= ocms_escape($lesson['slug']) ?>';
 const BASE = '<?= ocms_base_url() ?>';
-const CSRF = '<?= $_SESSION['_csrf_token'] ?? '' ?>';
+const CSRF = '<?= ocms_csrf_token() ?>';
 
 function setMainFile(name) {
     document.getElementById('main-file-input').value = name;
@@ -204,6 +204,7 @@ function handleDrop(e) {
     if (!files.length) return;
     const fd = new FormData();
     for (let i = 0; i < files.length; i++) fd.append('files[]', files[i]);
+    fd.append('_csrf_token', CSRF);
     fetch(BASE + '/admin/lessons/upload-files/' + SLUG, {
         method: 'POST',
         body: fd

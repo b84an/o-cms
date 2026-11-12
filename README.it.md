@@ -201,6 +201,26 @@ Le estensioni possono registrare rotte, agganciarsi a eventi e aggiungere voci a
 
 ---
 
+## Novità della 2.0
+
+- **Grafica nuova**: un unico design system "notte sul lago" per admin e sito (glassmorfismo blu, aurora animata, tema chiaro/scuro automatico, font ospitati in locale). Il tema predefinito `flavor` è stato riscritto da zero e copre tutti i contenuti: blog, lezioni, quiz, gallerie, FoglioFirme, ricerca, pagina di manutenzione.
+- **Admin**: menu laterale a gruppi richiudibili, palette comandi (Ctrl/Cmd+K), notifiche a comparsa, salvataggio automatico delle bozze nell'editor, badge "Programmato", confronto riga per riga tra revisioni.
+- **Sicurezza**: molte correzioni (iniezione SMTP nel form contatti, upload di file eseguibili, escalation dei ruoli, CSRF aggirabile con token vuoto, sanitizer aggirabile, risposte dei quiz visibili nel browser, brute force su login e codici dei quiz). Dettagli nel [CHANGELOG.md](CHANGELOG.md).
+- **Affidabilità**: ogni scrittura JSON è atomica e sotto lock; niente più firme, compilazioni o statistiche perse con accessi simultanei; rinominare uno slug conserva visite e revisioni.
+- **Aggiornamenti automatici**: verifica dello SHA-256 del pacchetto, conservazione delle regole personali del `.htaccess`, rimozione dei file obsoleti del core.
+
+## Migrare dalla 1.x
+
+1. **Fai un backup** dell'intera cartella del sito (almeno `data/`, `.htaccess` e gli eventuali temi modificati).
+2. Scarica `o-cms-2.0.0.zip` dalla pagina [Releases](../../releases).
+3. Carica sovrascrivendo `core/`, `admin/`, `assets/`, `themes/flavor/` e `index.php`. **Non** toccare `data/` e `uploads/`: il formato dei dati non cambia, non serve nessuna conversione.
+4. Sostituisci il `.htaccess` con quello nuovo. Se avevi regole tue (redirect 301 ecc.), mettile fra le righe `# === PERSONALIZZAZIONI DEL SITO ===` e `# === FINE PERSONALIZZAZIONI ===`: gli aggiornamenti automatici conservano quel blocco.
+5. Se sul server c'è ancora `install.php`, cancellalo.
+6. Entra nell'admin e apri **Impostazioni**: controlla l'email dell'amministratore (il form contatti ora scrive lì), scegli il tema `flavor` se vuoi la grafica nuova e salva. Il salvataggio rigenera anche `sitemap.xml` e `robots.txt`.
+7. Dalla 2.0 in poi la voce **Aggiornamenti** dell'admin installa da sola le nuove versioni.
+
+---
+
 ## API REST
 
 O-CMS include un'API REST JSON per leggere e scrivere contenuti in modo programmatico.
@@ -227,8 +247,11 @@ I token API si gestiscono dal pannello admin sotto **API**.
 - Sanitizzazione input con `htmlspecialchars`
 - Directory `data/` protetta da `.htaccess`
 - Rigenerazione Session ID dopo il login
-- Rate limiting su login, registrazione e commenti
+- Limiti ai tentativi per sessione e per IP su login, registrazione, commenti, form contatti e codici dei quiz
 - Captcha matematico sui form pubblici
+- Upload: l'estensione deve corrispondere al contenuto reale; nessuno script è mai eseguibile dentro `uploads/`
+- Scritture JSON atomiche e sotto lock
+- Errori PHP nascosti in produzione (per vederli crea il file vuoto `data/.debug`)
 
 ---
 

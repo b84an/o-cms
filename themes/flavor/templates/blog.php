@@ -1,81 +1,114 @@
-<!DOCTYPE html>
-<html lang="<?= ocms_escape($app->config['language'] ?? 'it') ?>">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Blog — <?= ocms_escape($app->config['site_name'] ?? 'O-CMS') ?></title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="<?= ocms_base_url() ?>/themes/flavor/assets/css/style.css">
-</head>
-<body>
-    <?php include dirname(__DIR__) . '/partials/header.php'; ?>
+<?php
+require_once __DIR__ . '/_bootstrap.php';
+$all        = array_values(is_array($articles ?? null) ? $articles : []);
+$cats       = is_array($categories ?? null) ? $categories : [];
+$currentSort = ($sort ?? 'date') === 'alpha' ? 'alpha' : 'date';
+$currentCat  = is_string($filterCat ?? null) ? $filterCat : '';
+$currentTag  = isset($_GET['tag']) && is_string($_GET['tag']) ? ocms_slug($_GET['tag']) : '';
 
-    <main class="site-main">
-        <section class="hero" style="padding:60px 0 40px;">
-            <div class="container"><h1>Blog</h1></div>
-        </section>
-        <section style="padding:0 0 80px;">
-            <div class="container">
+// Filtro per tag (la rotta filtra già per categoria)
+if ($currentTag !== '') {
+    $all = array_values(array_filter($all, static function ($a) use ($currentTag) {
+        foreach ((array) ($a['tags'] ?? []) as $t) {
+            if (is_string($t) && ocms_slug($t) === $currentTag) return true;
+        }
+        return false;
+    }));
+}
 
-                <?php
-                $cats = $categories ?? [];
-                $currentSort = $sort ?? 'date';
-                $currentCat = $filterCat ?? '';
-                ?>
-                <?php if (!empty($cats)): ?>
-                <div style="display:flex;align-items:center;gap:12px;margin-bottom:32px;flex-wrap:wrap;">
-                    <a href="<?= ocms_base_url() ?>/blog?sort=<?= $currentSort ?>" style="padding:6px 16px;border-radius:20px;font-size:0.8rem;font-weight:600;<?= !$currentCat ? 'background:var(--primary);color:#fff;' : 'background:var(--bg-light);color:var(--text-muted);border:1px solid var(--border);' ?>text-decoration:none;">Tutti</a>
-                    <?php foreach ($cats as $cat): ?>
-                    <a href="<?= ocms_base_url() ?>/blog?cat=<?= ocms_escape($cat['slug']) ?>&sort=<?= $currentSort ?>" style="padding:6px 16px;border-radius:20px;font-size:0.8rem;font-weight:600;<?= $currentCat === $cat['slug'] ? 'background:var(--primary);color:#fff;' : 'background:var(--bg-light);color:var(--text-muted);border:1px solid var(--border);' ?>text-decoration:none;"><?= ocms_escape($cat['name']) ?></a>
-                    <?php endforeach; ?>
-                    <span style="flex:1;"></span>
-                    <div style="display:flex;gap:6px;align-items:center;">
-                        <a href="<?= ocms_base_url() ?>/blog?sort=date<?= $currentCat ? '&cat='.$currentCat : '' ?>" title="Per data" style="padding:5px 10px;border-radius:6px;font-size:0.75rem;<?= $currentSort === 'date' ? 'background:var(--primary);color:#fff;' : 'background:var(--bg-light);color:var(--text-muted);border:1px solid var(--border);' ?>text-decoration:none;">Data</a>
-                        <a href="<?= ocms_base_url() ?>/blog?sort=alpha<?= $currentCat ? '&cat='.$currentCat : '' ?>" title="Alfabetico" style="padding:5px 10px;border-radius:6px;font-size:0.75rem;<?= $currentSort === 'alpha' ? 'background:var(--primary);color:#fff;' : 'background:var(--bg-light);color:var(--text-muted);border:1px solid var(--border);' ?>text-decoration:none;">A-Z</a>
-                    </div>
-                </div>
-                <?php endif; ?>
+$catNames = [];
+foreach ($cats as $c) { $catNames[$c['slug'] ?? ''] = $c['name'] ?? ''; }
 
-                <?php if (empty($articles)): ?>
-                    <p style="color:var(--text-muted);text-align:center;">Nessun articolo pubblicato.</p>
-                <?php else: ?>
-                    <div class="articles-grid">
-                        <?php foreach ($articles as $a):
-                            $wordCount = str_word_count(strip_tags($a['content'] ?? ''));
-                            $readTime = max(1, round($wordCount / 200));
-                        ?>
-                        <article class="article-card">
-                            <?php if (!empty($a['cover_image'])): ?>
-                                <div class="article-cover" style="background-image:url('<?= ocms_base_url() . ocms_escape($a['cover_image']) ?>');"></div>
-                            <?php endif; ?>
-                            <div class="article-body">
-                                <?php if (!empty($a['category'])): ?>
-                                    <span class="article-cat"><?= ocms_escape($a['category']) ?></span>
-                                <?php endif; ?>
-                                <?php if (!empty($a['featured'])): ?>
-                                    <span style="display:inline-block;font-size:0.65rem;font-weight:700;color:#f59e0b;text-transform:uppercase;letter-spacing:0.5px;margin-left:8px;">
-                                        <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="#f59e0b" stroke="#f59e0b" stroke-width="2" style="vertical-align:-1px;"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
-                                        In evidenza
-                                    </span>
-                                <?php endif; ?>
-                                <h2><a href="<?= ocms_base_url() ?>/blog/<?= ocms_escape($a['slug']) ?>"><?= ocms_escape($a['title']) ?></a></h2>
-                                <?php if (!empty($a['excerpt'])): ?>
-                                    <p><?= ocms_escape(ocms_truncate($a['excerpt'], 120)) ?></p>
-                                <?php endif; ?>
-                                <div class="article-meta" style="display:flex;align-items:center;justify-content:space-between;">
-                                    <span><?= ocms_format_date($a['created_at'], 'd M Y') ?> · <?= $readTime ?> min</span>
-                                    <a href="<?= ocms_base_url() ?>/blog/<?= ocms_escape($a['slug']) ?>" style="display:inline-block;padding:5px 14px;background:rgba(99,102,241,0.12);color:var(--primary-light);border-radius:6px;font-size:0.8rem;font-weight:600;text-decoration:none;transition:background .15s;">Leggi tutto &rarr;</a>
-                                </div>
-                            </div>
-                        </article>
-                        <?php endforeach; ?>
-                    </div>
-                <?php endif; ?>
-            </div>
-        </section>
-    </main>
+// Paginazione
+$perPage    = max(1, (int) ($app->config['posts_per_page'] ?? 10) ?: 10);
+$total      = count($all);
+$totalPages = max(1, (int) ceil($total / $perPage));
+$pageNum    = isset($_GET['page']) && is_scalar($_GET['page']) ? (int) $_GET['page'] : 1;
+$pageNum    = min(max(1, $pageNum), $totalPages);
+$items      = array_slice($all, ($pageNum - 1) * $perPage, $perPage);
 
-    <?php include dirname(__DIR__) . '/partials/footer.php'; ?>
-</body>
-</html>
+$blogUrl = static function (array $over = []) use ($currentSort, $currentCat, $currentTag): string {
+    $q = array_merge(['cat' => $currentCat, 'tag' => $currentTag, 'sort' => $currentSort, 'page' => 1], $over);
+    if ($q['sort'] === 'date') unset($q['sort']);
+    if ((int) $q['page'] <= 1) unset($q['page']);
+    $q = array_filter($q, static fn($v) => $v !== '' && $v !== null);
+    return ocms_base_url() . '/blog' . ($q ? '?' . http_build_query($q) : '');
+};
+
+$heading = 'Blog';
+if ($currentCat !== '') $heading = $catNames[$currentCat] ?? ucfirst(str_replace('-', ' ', $currentCat));
+$titleParts = [$heading];
+if ($currentTag !== '') $titleParts[] = '#' . flavor_tag_label($currentTag);
+if ($pageNum > 1) $titleParts[] = 'pagina ' . $pageNum;
+
+$flavor = [
+    'title'       => implode(' — ', $titleParts),
+    'description' => $app->config['site_description'] ?? '',
+    'seo'         => ['title' => implode(' — ', $titleParts), 'description' => $app->config['site_description'] ?? ''],
+    'bodyClass'   => 'page-blog',
+];
+include __DIR__ . '/_header.php';
+?>
+<div class="wrap">
+    <header class="page-head">
+        <h1 class="display"><?= ocms_escape($heading) ?></h1>
+        <p class="page-head-count"><?= $total === 1 ? '1 articolo' : number_format($total, 0, ',', '.') . ' articoli' ?><?php if ($currentTag !== ''): ?> con il tag <strong><?= ocms_escape(flavor_tag_label($currentTag)) ?></strong><?php endif; ?></p>
+    </header>
+
+    <div class="filter-bar">
+<?php if ($cats): ?>
+        <nav class="chips" aria-label="Categorie">
+            <a class="chip" href="<?= ocms_escape($blogUrl(['cat' => ''])) ?>"<?= $currentCat === '' ? ' aria-current="true"' : '' ?>>Tutti</a>
+<?php foreach ($cats as $cat): if (empty($cat['slug'])) continue; ?>
+            <a class="chip" href="<?= ocms_escape($blogUrl(['cat' => $cat['slug']])) ?>"<?= $currentCat === $cat['slug'] ? ' aria-current="true"' : '' ?>><?= ocms_escape($cat['name'] ?? $cat['slug']) ?></a>
+<?php endforeach; ?>
+        </nav>
+<?php endif; ?>
+<?php if ($currentTag !== ''): ?>
+        <a class="chip chip-active-tag" href="<?= ocms_escape($blogUrl(['tag' => ''])) ?>"><?= flavor_icon('tag', 14) ?><span><?= ocms_escape(flavor_tag_label($currentTag)) ?></span><?= flavor_icon('close', 14) ?><span class="sr-only">rimuovi il filtro</span></a>
+<?php endif; ?>
+        <div class="segmented" role="group" aria-label="Ordinamento">
+            <a href="<?= ocms_escape($blogUrl(['sort' => 'date'])) ?>"<?= $currentSort === 'date' ? ' aria-current="true"' : '' ?>>Recenti</a>
+            <a href="<?= ocms_escape($blogUrl(['sort' => 'alpha'])) ?>"<?= $currentSort === 'alpha' ? ' aria-current="true"' : '' ?>>A-Z</a>
+        </div>
+    </div>
+
+<?php if (!$items): ?>
+    <div class="empty-state ocms-glass">
+        <p>Nessun articolo da mostrare con questi filtri.</p>
+        <a class="btn btn-ghost" href="<?= ocms_base_url() ?>/blog">Mostra tutti gli articoli</a>
+    </div>
+<?php else: ?>
+    <div class="post-grid post-grid-blog">
+<?php foreach ($items as $i => $a):
+    $lead = ($i === 0 && $pageNum === 1 && $currentSort === 'date');
+    echo flavor_article_card($a, ['variant' => $lead ? 'lead' : 'standard', 'eager' => $i === 0, 'catNames' => $catNames]);
+endforeach; ?>
+    </div>
+
+<?php if ($totalPages > 1):
+    // Finestra di pagine: prima, ultima e due attorno a quella corrente
+    $show = [];
+    for ($p = 1; $p <= $totalPages; $p++) {
+        if ($p === 1 || $p === $totalPages || abs($p - $pageNum) <= 1) $show[] = $p;
+    }
+?>
+    <nav class="pager" aria-label="Paginazione">
+<?php if ($pageNum > 1): ?>
+        <a class="pager-step" href="<?= ocms_escape($blogUrl(['page' => $pageNum - 1])) ?>" rel="prev"><?= flavor_icon('left', 16) ?><span>Precedenti</span></a>
+<?php endif; ?>
+        <ol class="pager-pages">
+<?php $prev = 0; foreach ($show as $p): if ($p - $prev > 1): ?>
+            <li class="pager-gap" aria-hidden="true">…</li>
+<?php endif; $prev = $p; ?>
+            <li><?php if ($p === $pageNum): ?><span aria-current="page"><?= $p ?></span><?php else: ?><a href="<?= ocms_escape($blogUrl(['page' => $p])) ?>" aria-label="Pagina <?= $p ?>"><?= $p ?></a><?php endif; ?></li>
+<?php endforeach; ?>
+        </ol>
+<?php if ($pageNum < $totalPages): ?>
+        <a class="pager-step" href="<?= ocms_escape($blogUrl(['page' => $pageNum + 1])) ?>" rel="next"><span>Successivi</span><?= flavor_icon('right', 16) ?></a>
+<?php endif; ?>
+    </nav>
+<?php endif; ?>
+<?php endif; ?>
+</div>
+<?php include __DIR__ . '/_footer.php'; ?>

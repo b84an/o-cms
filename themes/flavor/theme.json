@@ -1,12 +1,14 @@
 {
     "name": "Flavor",
-    "version": "1.0.0",
+    "version": "2.0.0",
     "author": "O-CMS",
-    "description": "Tema di default — elegante, minimale, responsive",
+    "description": "Tema predefinito di O-CMS 2: vetro blu sopra un'aurora notturna, tema chiaro e scuro, View Transitions tra blog e articolo",
+    "license": "MIT",
     "colors": {
-        "primary": "#6366f1",
-        "secondary": "#a78bfa",
-        "bg": "#0f172a",
-        "text": "#f1f5f9"
-    }
+        "primary": "#2563eb",
+        "secondary": "#8b5cf6",
+        "bg": "#0b1b3a",
+        "text": "#e6eeff"
+    },
+    "font": "Bricolage Grotesque"
 }

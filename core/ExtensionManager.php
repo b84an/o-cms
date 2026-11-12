@@ -2,28 +2,20 @@
 /**
  * O-CMS — Extension Manager
  *
- * Manages the full lifecycle of extensions:
- * - Loading and booting active extensions
- * - Installing from ZIP packages
- * - Uninstalling and cleanup
- * - Creating distributable ZIP packages
- * - Manifest validation
- * - Scaffolding new extensions via wizard
+ * Gestisce il ciclo di vita delle estensioni:
+ * - Caricamento e boot
+ * - Installazione da ZIP
+ * - Disinstallazione
+ * - Creazione pacchetti ZIP
+ * - Validazione manifest
  *
- * Each extension lives in extensions/{ext-name}/ and has an extension.json manifest.
- *
- * @package O-CMS
- * @version 1.0.0
+ * Ogni estensione vive in extensions/{ext-name}/ e ha un manifest extension.json
  */
 class ExtensionManager {
     private App $app;
     private string $extensionsPath;
-    /** @var array<string, array> Already booted extensions keyed by ID */
     private array $loaded = [];
 
-    /**
-     * @param App $app The main application instance
-     */
     public function __construct(App $app) {
         $this->app = $app;
         $this->extensionsPath = ocms_base_path() . '/extensions';
@@ -33,9 +25,7 @@ class ExtensionManager {
     }
 
     /**
-     * Load and boot all enabled extensions.
-     *
-     * @return void
+     * Carica e avvia tutte le estensioni attive
      */
     public function bootAll(): void {
         $extensions = $this->getAll();
@@ -47,10 +37,7 @@ class ExtensionManager {
     }
 
     /**
-     * Boot a single extension by ID.
-     *
-     * @param string $id Extension identifier (directory name)
-     * @return bool True if booted successfully
+     * Avvia una singola estensione
      */
     public function boot(string $id): bool {
         if (isset($this->loaded[$id])) {
@@ -65,7 +52,7 @@ class ExtensionManager {
             return false;
         }
 
-        // Make variables available to the extension
+        // Rendi disponibili le variabili all'estensione
         $app = $this->app;
         $extension = $manifest;
 
@@ -75,15 +62,13 @@ class ExtensionManager {
             Hooks::trigger('extension.booted', ['id' => $id, 'manifest' => $manifest]);
             return true;
         } catch (\Throwable $e) {
-            $this->log($id, 'error', 'Boot failed: ' . $e->getMessage());
+            $this->log($id, 'error', 'Boot fallito: ' . $e->getMessage());
             return false;
         }
     }
 
     /**
-     * Return all installed extensions (enabled and disabled).
-     *
-     * @return array List of manifest arrays sorted by name
+     * Restituisce tutte le estensioni (installate)
      */
     public function getAll(): array {
         $extensions = [];
@@ -102,10 +87,7 @@ class ExtensionManager {
     }
 
     /**
-     * Read an extension's manifest (extension.json).
-     *
-     * @param string $id Extension identifier
-     * @return array|null The manifest data or null if not found
+     * Legge il manifest di un'estensione
      */
     public function getManifest(string $id): ?array {
         $file = $this->extensionsPath . '/' . basename($id) . '/extension.json';
@@ -119,32 +101,19 @@ class ExtensionManager {
     }
 
     /**
-     * Enable an extension.
-     *
-     * @param string $id Extension identifier
-     * @return bool True on success
+     * Attiva un'estensione
      */
     public function enable(string $id): bool {
         return $this->setEnabled($id, true);
     }
 
     /**
-     * Disable an extension.
-     *
-     * @param string $id Extension identifier
-     * @return bool True on success
+     * Disattiva un'estensione
      */
     public function disable(string $id): bool {
         return $this->setEnabled($id, false);
     }
 
-    /**
-     * Toggle the enabled state of an extension in its manifest.
-     *
-     * @param string $id      Extension identifier
-     * @param bool   $enabled Whether to enable or disable
-     * @return bool True on success
-     */
     private function setEnabled(string $id, bool $enabled): bool {
         $manifest = $this->getManifest($id);
         if (!$manifest) return false;
@@ -156,10 +125,7 @@ class ExtensionManager {
     }
 
     /**
-     * Install an extension from a ZIP file.
-     *
-     * @param string $zipPath Absolute path to the ZIP file
-     * @return array Result with 'success' (bool), optionally 'error', 'id', and 'manifest'
+     * Installa un'estensione da file ZIP
      */
     public function installFromZip(string $zipPath): array {
         if (!file_exists($zipPath)) {
@@ -171,7 +137,7 @@ class ExtensionManager {
             return ['success' => false, 'error' => 'Impossibile aprire il file ZIP'];
         }
 
-        // Look for extension.json in the ZIP
+        // Cerca extension.json nel ZIP
         $manifestContent = null;
         $rootDir = '';
 
@@ -196,7 +162,7 @@ class ExtensionManager {
             return ['success' => false, 'error' => 'extension.json non valido'];
         }
 
-        // Validate manifest
+        // Valida manifest
         $validation = $this->validateManifest($manifest);
         if (!$validation['valid']) {
             $zip->close();
@@ -206,20 +172,20 @@ class ExtensionManager {
         $extId = ocms_slug($manifest['id'] ?? $manifest['name']);
         $destDir = $this->extensionsPath . '/' . $extId;
 
-        // If it already exists, remove it (upgrade)
+        // Se esiste già, rimuovi (aggiornamento)
         if (is_dir($destDir)) {
             $this->removeDirectory($destDir);
         }
 
         mkdir($destDir, 0755, true);
 
-        // Extract files
+        // Estrai i file
         for ($i = 0; $i < $zip->numFiles; $i++) {
             $name = $zip->getNameIndex($i);
             $relativePath = $rootDir ? substr($name, strlen($rootDir) + 1) : $name;
             if (!$relativePath || str_ends_with($name, '/')) continue;
 
-            // Security: prevent path traversal
+            // Sicurezza: previeni path traversal
             if (str_contains($relativePath, '..')) continue;
 
             $targetPath = $destDir . '/' . $relativePath;
@@ -233,7 +199,7 @@ class ExtensionManager {
 
         $zip->close();
 
-        // Ensure the extension is disabled by default
+        // Assicura che sia disattivata di default
         $manifest['id'] = $extId;
         $manifest['enabled'] = false;
         $manifest['installed_at'] = ocms_now();
@@ -242,7 +208,7 @@ class ExtensionManager {
             json_encode($manifest, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)
         );
 
-        // Run install script if present
+        // Esegui script di installazione se presente
         $installScript = $destDir . '/install.php';
         if (file_exists($installScript)) {
             $app = $this->app;
@@ -250,26 +216,23 @@ class ExtensionManager {
             try {
                 require $installScript;
             } catch (\Throwable $e) {
-                $this->log($extId, 'warning', 'Install script failed: ' . $e->getMessage());
+                $this->log($extId, 'warning', 'Script installazione fallito: ' . $e->getMessage());
             }
         }
 
-        $this->log($extId, 'info', 'Extension installed');
+        $this->log($extId, 'info', 'Estensione installata');
         return ['success' => true, 'id' => $extId, 'manifest' => $manifest];
     }
 
     /**
-     * Uninstall an extension (runs uninstall script and removes directory).
-     *
-     * @param string $id Extension identifier
-     * @return bool True if successfully removed
+     * Disinstalla un'estensione
      */
     public function uninstall(string $id): bool {
         $id = basename($id);
         $dir = $this->extensionsPath . '/' . $id;
         if (!is_dir($dir)) return false;
 
-        // Run uninstall script if present
+        // Esegui script di disinstallazione se presente
         $uninstallScript = $dir . '/uninstall.php';
         if (file_exists($uninstallScript)) {
             $app = $this->app;
@@ -277,20 +240,17 @@ class ExtensionManager {
             try {
                 require $uninstallScript;
             } catch (\Throwable $e) {
-                $this->log($id, 'warning', 'Uninstall script failed: ' . $e->getMessage());
+                $this->log($id, 'warning', 'Script disinstallazione fallito: ' . $e->getMessage());
             }
         }
 
         $this->removeDirectory($dir);
-        $this->log($id, 'info', 'Extension uninstalled');
+        $this->log($id, 'info', 'Estensione disinstallata');
         return true;
     }
 
     /**
-     * Create a distributable ZIP package of an extension.
-     *
-     * @param string $id Extension identifier
-     * @return string|null Absolute path to the created ZIP, or null on failure
+     * Crea un pacchetto ZIP di un'estensione
      */
     public function createPackage(string $id): ?string {
         $id = basename($id);
@@ -312,10 +272,7 @@ class ExtensionManager {
     }
 
     /**
-     * Scaffold a new extension from wizard data.
-     *
-     * @param array $data Wizard form data (name, description, author, etc.)
-     * @return array Result with 'success' (bool), optionally 'error', 'id', and 'manifest'
+     * Crea una nuova estensione da template (wizard)
      */
     public function createFromWizard(array $data): array {
         $id = ocms_slug($data['name'] ?? 'my-extension');
@@ -327,7 +284,7 @@ class ExtensionManager {
 
         mkdir($dir, 0755, true);
 
-        // Build manifest
+        // Manifest
         $manifest = [
             'id' => $id,
             'name' => $data['name'],
@@ -357,11 +314,11 @@ class ExtensionManager {
             json_encode($manifest, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)
         );
 
-        // boot.php -- entry point
+        // boot.php — entry point
         $bootContent = $this->generateBootFile($id, $data);
         file_put_contents($dir . '/boot.php', $bootContent);
 
-        // Create subdirectories
+        // Crea sottocartelle
         if ($data['has_admin'] ?? true) {
             mkdir($dir . '/views', 0755, true);
             $viewContent = $this->generateAdminView($id, $data);
@@ -375,7 +332,7 @@ class ExtensionManager {
         if ($data['has_assets'] ?? false) {
             mkdir($dir . '/assets/css', 0755, true);
             mkdir($dir . '/assets/js', 0755, true);
-            file_put_contents($dir . '/assets/css/style.css', "/* {$data['name']} — Styles */\n");
+            file_put_contents($dir . '/assets/css/style.css', "/* {$data['name']} — Stili */\n");
             file_put_contents($dir . '/assets/js/app.js', "// {$data['name']} — Script\n");
         }
 
@@ -383,20 +340,16 @@ class ExtensionManager {
             mkdir($dir . '/data', 0755, true);
         }
 
-        // install.php and uninstall.php
-        file_put_contents($dir . '/install.php', "<?php\n// Install script for {$data['name']}\n// \$app and \$extension are available\n");
-        file_put_contents($dir . '/uninstall.php', "<?php\n// Uninstall script for {$data['name']}\n// \$app and \$extension are available\n");
+        // install.php e uninstall.php
+        file_put_contents($dir . '/install.php', "<?php\n// Script di installazione per {$data['name']}\n// \$app e \$extension sono disponibili\n");
+        file_put_contents($dir . '/uninstall.php', "<?php\n// Script di disinstallazione per {$data['name']}\n// \$app e \$extension sono disponibili\n");
 
-        $this->log($id, 'info', 'Extension created from wizard');
+        $this->log($id, 'info', 'Estensione creata da wizard');
         return ['success' => true, 'id' => $id, 'manifest' => $manifest];
     }
 
     /**
-     * Generate the boot.php entry point for a new extension.
-     *
-     * @param string $id   Extension identifier
-     * @param array  $data Wizard form data
-     * @return string PHP source code for boot.php
+     * Genera il file boot.php per una nuova estensione
      */
     private function generateBootFile(string $id, array $data): string {
         $className = str_replace(' ', '', ucwords(str_replace('-', ' ', $id)));
@@ -404,22 +357,22 @@ class ExtensionManager {
         $hasFrontend = $data['has_frontend'] ?? false;
 
         $code = "<?php\n";
-        $code .= "/**\n * {$data['name']} — O-CMS Extension\n *\n";
+        $code .= "/**\n * {$data['name']} — Extension per O-CMS\n *\n";
         $code .= " * @version 1.0.0\n";
         if (!empty($data['author'])) $code .= " * @author {$data['author']}\n";
         $code .= " */\n\n";
-        $code .= "// \$app (App) and \$extension (manifest) are available\n\n";
+        $code .= "// \$app (App) e \$extension (manifest) sono disponibili\n\n";
 
         if ($hasAdmin) {
-            $code .= "// ─── ADMIN ROUTES ───\n";
-            $code .= "// Base route: /admin/ext/{$id}\n";
+            $code .= "// ─── ROTTE ADMIN ───\n";
+            $code .= "// La rotta base è: /admin/ext/{$id}\n";
             $code .= "\$app->router->get('/ext/{$id}', function () use (\$app, \$extension) {\n";
             $code .= "    \$app->auth->requireRole('administrator');\n";
             $code .= "    \$extPath = ocms_base_path() . '/extensions/{$id}/views/index.php';\n";
             $code .= "    \$pageTitle = '{$data['name']}';\n";
             $code .= "    \$activeMenu = 'ext-{$id}';\n";
             $code .= "    \$data = [];\n\n";
-            $code .= "    // Load the view\n";
+            $code .= "    // Carica la vista\n";
             $code .= "    ob_start();\n";
             $code .= "    include \$extPath;\n";
             $code .= "    \$content = ob_get_clean();\n";
@@ -428,25 +381,21 @@ class ExtensionManager {
         }
 
         if ($hasFrontend) {
-            $code .= "// ─── FRONTEND ROUTES ───\n";
-            $code .= "// Add your frontend routes here\n";
+            $code .= "// ─── ROTTE FRONTEND ───\n";
+            $code .= "// Aggiungi le tue rotte frontend qui\n";
             $code .= "// \$app->router->get('/my-route', function () use (\$app) { ... });\n\n";
         }
 
         $code .= "// ─── HOOKS ───\n";
         $code .= "// Hooks::on('app.before_dispatch', function (\$app) {\n";
-        $code .= "//     // Code executed before route dispatch\n";
+        $code .= "//     // Codice eseguito prima del dispatch\n";
         $code .= "// });\n";
 
         return $code;
     }
 
     /**
-     * Generate the default admin view template for a new extension.
-     *
-     * @param string $id   Extension identifier
-     * @param array  $data Wizard form data
-     * @return string PHP/HTML template source
+     * Genera la vista admin di default per una nuova estensione
      */
     private function generateAdminView(string $id, array $data): string {
         return <<<'HTML'
@@ -456,7 +405,7 @@ class ExtensionManager {
 
 <div class="card">
     <p style="color:var(--text-muted);">
-        Extension is active and running. Edit this file to build your interface.
+        Estensione attiva e funzionante. Modifica questo file per costruire la tua interfaccia.
     </p>
     <p style="color:var(--text-muted);margin-top:8px;font-size:0.85rem;">
         File: <code>extensions/<?= ocms_escape($extension['id'] ?? '') ?>/views/index.php</code>
@@ -466,10 +415,7 @@ HTML;
     }
 
     /**
-     * Validate an extension manifest for required fields and security.
-     *
-     * @param array $manifest The manifest data to validate
-     * @return array Associative array with 'valid' (bool) and 'errors' (string[])
+     * Valida un manifest
      */
     public function validateManifest(array $manifest): array {
         $errors = [];
@@ -484,9 +430,7 @@ HTML;
     }
 
     /**
-     * Return admin sidebar menu items declared by enabled extensions.
-     *
-     * @return array List of menu item arrays with 'id', 'label', 'icon', 'url'
+     * Restituisce le estensioni che dichiarano un menu admin
      */
     public function getAdminMenuItems(): array {
         $items = [];
@@ -504,12 +448,7 @@ HTML;
     }
 
     /**
-     * Write a log entry for extension events.
-     *
-     * @param string $extId   Extension identifier
-     * @param string $level   Log level (info, warning, error)
-     * @param string $message Log message
-     * @return void
+     * Log per estensioni
      */
     private function log(string $extId, string $level, string $message): void {
         $logDir = ocms_data_path('logs');
@@ -526,12 +465,6 @@ HTML;
         file_put_contents($logFile, json_encode($entry) . "\n", FILE_APPEND | LOCK_EX);
     }
 
-    /**
-     * Recursively remove a directory and all its contents.
-     *
-     * @param string $dir Absolute directory path
-     * @return void
-     */
     private function removeDirectory(string $dir): void {
         if (!is_dir($dir)) return;
         $items = new RecursiveIteratorIterator(
@@ -544,14 +477,6 @@ HTML;
         rmdir($dir);
     }
 
-    /**
-     * Recursively add a directory's files to a ZipArchive.
-     *
-     * @param ZipArchive $zip    The ZIP archive to add files to
-     * @param string     $dir    Source directory path
-     * @param string     $prefix ZIP path prefix for entries
-     * @return void
-     */
     private function addDirectoryToZip(ZipArchive $zip, string $dir, string $prefix): void {
         $iterator = new RecursiveIteratorIterator(
             new RecursiveDirectoryIterator($dir, RecursiveDirectoryIterator::SKIP_DOTS),

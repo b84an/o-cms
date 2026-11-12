@@ -201,6 +201,26 @@ Extensions can register routes, hook into events, and add admin menu items. See 
 
 ---
 
+## What's new in 2.0
+
+- **New look**: a shared "lake at night" design system for admin and site (blue glassmorphism, animated aurora, automatic light/dark theme, self-hosted fonts). The default theme `flavor` was rewritten from scratch and now covers every content type: blog, lessons, quizzes, galleries, sign-in sheets (FoglioFirme), search, maintenance page.
+- **Admin**: collapsible sidebar groups, command palette (Ctrl/Cmd+K), toast notifications, local draft autosave in the editors, "scheduled" badge for future posts, line-by-line revision diff.
+- **Security**: many fixes (SMTP header injection in the contact form, upload of executable files, role escalation, empty-CSRF-token bypass, sanitizer bypasses, quiz answers exposed to the browser, brute force on login and quiz codes). See [CHANGELOG.md](CHANGELOG.md).
+- **Reliability**: every JSON write is atomic and locked; no more lost sign-ins, form submissions or statistics under concurrent access; renaming a slug keeps views and revisions.
+- **Updater**: verifies the SHA-256 checksum of the release package, keeps your custom `.htaccess` rules, removes obsolete core files.
+
+## Upgrading from 1.x
+
+1. **Back up** the whole site folder (at least `data/`, `.htaccess` and any theme you changed).
+2. Download `o-cms-2.0.0.zip` from the [Releases](../../releases) page.
+3. Upload and overwrite `core/`, `admin/`, `assets/`, `themes/flavor/` and `index.php`. Do **not** touch `data/` and `uploads/`: the data format is unchanged, no migration is needed.
+4. Replace `.htaccess` with the new one. If you had your own rules (301 redirects, etc.), put them between the lines `# === PERSONALIZZAZIONI DEL SITO ===` and `# === FINE PERSONALIZZAZIONI ===`: future automatic updates keep that block.
+5. If `install.php` is still on the server, delete it.
+6. Log in to the admin and open **Settings**: check the admin email (the contact form now writes to it), choose the `flavor` theme if you want the new look, save. Saving also regenerates `sitemap.xml` and `robots.txt`.
+7. From 2.0 on, **Updates** in the admin can install new releases by itself.
+
+---
+
 ## REST API
 
 O-CMS includes a JSON REST API for reading and writing content programmatically.
@@ -208,6 +228,7 @@ O-CMS includes a JSON REST API for reading and writing content programmatically.
 ```bash
 # List articles
 curl -H "Authorization: Bearer YOUR_TOKEN" https://yourdomain.com/api/articles
+# (also available as /admin/api/...)
 
 # Create an article
 curl -X POST https://yourdomain.com/api/articles \
@@ -227,8 +248,11 @@ API tokens are managed in the admin panel under **API**.
 - Input sanitization with `htmlspecialchars`
 - `data/` directory protected by `.htaccess`
 - Session ID regeneration after login
-- Rate limiting on login, registration, and comments
+- Rate limiting per session and per IP on login, registration, comments, contact form and quiz codes
 - Math captcha on public forms
+- Uploads: extension must match the real content; scripts are never executable inside `uploads/`
+- Atomic, locked JSON writes
+- PHP errors hidden in production (create an empty `data/.debug` file to show them)
 
 ---
 

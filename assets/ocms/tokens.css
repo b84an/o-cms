@@ -1,0 +1,212 @@
+/* ═══════════════════════════════════════════════════════════════════
+   O-CMS 2 — Design system condiviso (admin + temi)
+   "Notte sul lago": vetro smerigliato sopra un'aurora blu, ciano e viola.
+   Nessuna dipendenza, nessuna build. Tema scuro/chiaro con:
+   - <html data-theme="dark|light">  scelta esplicita (salvata da ocms-theme.js)
+   - senza attributo: segue prefers-color-scheme
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* ── Font ospitati in locale (niente IP dei visitatori a Google) ── */
+@font-face {
+    font-family: 'Bricolage Grotesque';
+    src: url('fonts/bricolage-grotesque-latin.woff2') format('woff2');
+    font-weight: 400 800; font-style: normal; font-display: swap;
+}
+@font-face {
+    font-family: 'Atkinson Hyperlegible Next';
+    src: url('fonts/atkinson-next-latin.woff2') format('woff2');
+    font-weight: 200 800; font-style: normal; font-display: swap;
+}
+@font-face {
+    font-family: 'Atkinson Hyperlegible Next';
+    src: url('fonts/atkinson-next-latin-italic.woff2') format('woff2');
+    font-weight: 200 800; font-style: italic; font-display: swap;
+}
+
+/* ── Token di base (indipendenti dal tema) ── */
+:root {
+    --ocms-font-display: 'Bricolage Grotesque', 'Segoe UI', system-ui, sans-serif;
+    --ocms-font-text: 'Atkinson Hyperlegible Next', 'Segoe UI', system-ui, sans-serif;
+    --ocms-font-code: ui-monospace, 'Cascadia Code', 'JetBrains Mono', Menlo, Consolas, monospace;
+
+    /* palette fissa */
+    --ocms-cobalt: #2563eb;
+    --ocms-cobalt-strong: #1d4ed8;
+    --ocms-lake: #06b6d4;
+    --ocms-dusk: #8b5cf6;
+    --ocms-ok: #16a34a;
+    --ocms-warn: #d97706;
+    --ocms-danger: #dc2626;
+
+    /* scala tipografica (rapporto ~1.25) */
+    --ocms-step--1: 0.85rem;
+    --ocms-step-0: 1rem;
+    --ocms-step-1: 1.25rem;
+    --ocms-step-2: 1.56rem;
+    --ocms-step-3: 1.95rem;
+    --ocms-step-4: 2.44rem;
+    --ocms-step-5: clamp(2.4rem, 1.6rem + 3.2vw, 3.8rem);
+
+    /* raggi: gerarchici, non uno solo per tutto */
+    --ocms-radius-s: 8px;
+    --ocms-radius-m: 14px;
+    --ocms-radius-l: 22px;
+    --ocms-radius-pill: 999px;
+
+    --ocms-blur: 18px;
+    --ocms-ease: cubic-bezier(.2, .8, .2, 1);
+    --ocms-ease-spring: cubic-bezier(.34, 1.56, .64, 1);
+    --ocms-dur: 220ms;
+}
+
+/* ── Tema scuro (predefinito) ── */
+:root,
+:root[data-theme="dark"] {
+    color-scheme: dark;
+    --ocms-bg: #0b1b3a;
+    --ocms-bg-deep: #071228;
+    --ocms-surface: rgba(148, 178, 255, 0.07);
+    --ocms-surface-strong: rgba(148, 178, 255, 0.12);
+    --ocms-glass-border: rgba(186, 210, 255, 0.16);
+    --ocms-glass-highlight: rgba(255, 255, 255, 0.10);
+    --ocms-text: #e6eeff;
+    --ocms-text-muted: #a3b5da;
+    --ocms-link: #67e8f9;
+    --ocms-link-hover: #a5f3fc;
+    --ocms-primary: #3b82f6;
+    --ocms-primary-text: #ffffff;
+    --ocms-accent: #22d3ee;
+    --ocms-focus: #67e8f9;
+    --ocms-shadow: 0 18px 50px -18px rgba(2, 8, 30, 0.75);
+    --ocms-aurora-1: rgba(37, 99, 235, 0.55);
+    --ocms-aurora-2: rgba(6, 182, 212, 0.38);
+    --ocms-aurora-3: rgba(139, 92, 246, 0.40);
+    --ocms-code-bg: rgba(3, 10, 30, 0.55);
+}
+
+/* ── Tema chiaro: automatico se il sistema lo preferisce e nessuna scelta esplicita ── */
+@media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) {
+        color-scheme: light;
+        --ocms-bg: #eef4ff;
+        --ocms-bg-deep: #dfe9fb;
+        --ocms-surface: rgba(255, 255, 255, 0.55);
+        --ocms-surface-strong: rgba(255, 255, 255, 0.78);
+        --ocms-glass-border: rgba(37, 74, 160, 0.16);
+        --ocms-glass-highlight: rgba(255, 255, 255, 0.9);
+        --ocms-text: #0f1e3d;
+        --ocms-text-muted: #475a80;
+        --ocms-link: #1d4ed8;
+        --ocms-link-hover: #1e3a8a;
+        --ocms-primary: #2563eb;
+        --ocms-primary-text: #ffffff;
+        --ocms-accent: #0e7490;
+        --ocms-focus: #0891b2;
+        --ocms-shadow: 0 18px 44px -20px rgba(30, 58, 138, 0.35);
+        --ocms-aurora-1: rgba(59, 130, 246, 0.30);
+        --ocms-aurora-2: rgba(34, 211, 238, 0.28);
+        --ocms-aurora-3: rgba(167, 139, 250, 0.28);
+        --ocms-code-bg: rgba(15, 30, 61, 0.06);
+    }
+}
+:root[data-theme="light"] {
+    color-scheme: light;
+    --ocms-bg: #eef4ff;
+    --ocms-bg-deep: #dfe9fb;
+    --ocms-surface: rgba(255, 255, 255, 0.55);
+    --ocms-surface-strong: rgba(255, 255, 255, 0.78);
+    --ocms-glass-border: rgba(37, 74, 160, 0.16);
+    --ocms-glass-highlight: rgba(255, 255, 255, 0.9);
+    --ocms-text: #0f1e3d;
+    --ocms-text-muted: #475a80;
+    --ocms-link: #1d4ed8;
+    --ocms-link-hover: #1e3a8a;
+    --ocms-primary: #2563eb;
+    --ocms-primary-text: #ffffff;
+    --ocms-accent: #0e7490;
+    --ocms-focus: #0891b2;
+    --ocms-shadow: 0 18px 44px -20px rgba(30, 58, 138, 0.35);
+    --ocms-aurora-1: rgba(59, 130, 246, 0.30);
+    --ocms-aurora-2: rgba(34, 211, 238, 0.28);
+    --ocms-aurora-3: rgba(167, 139, 250, 0.28);
+    --ocms-code-bg: rgba(15, 30, 61, 0.06);
+}
+
+/* ═══ Aurora: lo sfondo vivo. Un solo elemento fisso, tre macchie sfocate ═══
+   Uso: <div class="ocms-aurora" aria-hidden="true"></div> come primo figlio di <body> */
+.ocms-aurora {
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    overflow: hidden;
+    pointer-events: none;
+    background:
+        radial-gradient(120% 80% at 50% -10%, var(--ocms-bg) 0%, var(--ocms-bg-deep) 100%);
+}
+.ocms-aurora::before,
+.ocms-aurora::after {
+    content: '';
+    position: absolute;
+    width: 62vmax;
+    height: 62vmax;
+    border-radius: 50%;
+    filter: blur(80px);
+    opacity: .9;
+    will-change: transform;
+}
+.ocms-aurora::before {
+    top: -22vmax;
+    left: -14vmax;
+    background: radial-gradient(circle at 40% 40%, var(--ocms-aurora-1), transparent 62%),
+                radial-gradient(circle at 75% 70%, var(--ocms-aurora-3), transparent 58%);
+    animation: ocms-drift-a 38s var(--ocms-ease) infinite alternate;
+}
+.ocms-aurora::after {
+    bottom: -26vmax;
+    right: -18vmax;
+    background: radial-gradient(circle at 50% 50%, var(--ocms-aurora-2), transparent 60%);
+    animation: ocms-drift-b 46s var(--ocms-ease) infinite alternate;
+}
+@keyframes ocms-drift-a {
+    from { transform: translate3d(0, 0, 0) rotate(0deg) scale(1); }
+    to   { transform: translate3d(10vmax, 8vmax, 0) rotate(40deg) scale(1.12); }
+}
+@keyframes ocms-drift-b {
+    from { transform: translate3d(0, 0, 0) scale(1.05); }
+    to   { transform: translate3d(-12vmax, -6vmax, 0) scale(.92); }
+}
+
+/* ═══ Vetro ═══ */
+.ocms-glass {
+    background: var(--ocms-surface);
+    border: 1px solid var(--ocms-glass-border);
+    box-shadow: inset 0 1px 0 var(--ocms-glass-highlight), var(--ocms-shadow);
+}
+@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    .ocms-glass {
+        -webkit-backdrop-filter: blur(var(--ocms-blur)) saturate(150%);
+        backdrop-filter: blur(var(--ocms-blur)) saturate(150%);
+    }
+}
+/* senza backdrop-filter il vetro diventa opaco: il testo resta leggibile */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    .ocms-glass { background: var(--ocms-bg-deep); }
+}
+
+/* ═══ Focus visibile e coerente ═══ */
+:where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+    outline: 2px solid var(--ocms-focus);
+    outline-offset: 3px;
+    border-radius: 4px;
+}
+
+/* ═══ Movimento ridotto: si ferma tutto ciò che non serve ═══ */
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+        animation-duration: 1ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 1ms !important;
+        scroll-behavior: auto !important;
+    }
+    .ocms-aurora::before, .ocms-aurora::after { animation: none !important; }
+}

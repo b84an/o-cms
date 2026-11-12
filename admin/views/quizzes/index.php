@@ -59,7 +59,7 @@ ob_start();
                                 <span class="badge badge-draft" style="margin-left:4px;">Non attivo</span>
                             <?php endif; ?>
                         </td>
-                        <td style="font-size:0.85rem;color:var(--text-muted);"><?= ocms_format_date($q['created_at'], 'd/m/Y') ?></td>
+                        <td style="font-size:0.85rem;color:var(--text-muted);"><?= !empty($q['created_at']) ? ocms_format_date($q['created_at'], 'd/m/Y') : '—' ?></td>
                         <td>
                             <div style="display:flex;gap:8px;justify-content:flex-end;">
                                 <?php if (($q['status'] ?? '') === 'published'): ?>

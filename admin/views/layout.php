@@ -1,215 +1,284 @@
+<?php
+// ─── Dati per il guscio dell'admin ───
+$_base = ocms_base_url();
+$_user = $app->auth->user() ?? [];
+$_role = $_user['role'] ?? '';
+$_active = $activeMenu ?? '';
+$_assetVer = function (string $rel): string {
+    $t = @filemtime(ocms_base_path() . $rel);
+    return $t ? '?v=' . $t : '';
+};
+$roleLabels = Auth::getRoleLabels();
+$_roleLabel = $roleLabels[$_role] ?? ucfirst(str_replace('_', ' ', $_role));
+$_displayName = $_user['display_name'] ?? '';
+
+$pendingComments = $app->storage->count('comments', fn($c) => ($c['status'] ?? '') === 'pending');
+
+// Icone (stroke, 24x24) — stesso disegno della sidebar precedente
+$_ico = [
+    'dashboard'   => '<rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/>',
+    'pages'       => '<path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/>',
+    'articles'    => '<path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>',
+    'comments'    => '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>',
+    'media'       => '<rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/>',
+    'menus'       => '<line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/>',
+    'layouts'     => '<rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/>',
+    'forms'       => '<path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/>',
+    'lessons'     => '<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>',
+    'quizzes'     => '<path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>',
+    'galleries'   => '<rect x="2" y="6" width="16" height="14" rx="2"/><path d="M6 6V4a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-2"/><circle cx="7" cy="11" r="1.5"/><path d="m18 17-4-4-8 7"/>',
+    'fogliofirme' => '<path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/><path d="M15 5 19 9"/>',
+    'analytics'   => '<line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/>',
+    'users'       => '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
+    'themes'      => '<circle cx="12" cy="12" r="10"/><path d="M12 2a15 15 0 0 1 4 10 15 15 0 0 1-4 10 15 15 0 0 1-4-10 15 15 0 0 1 4-10z"/>',
+    'settings'    => '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>',
+    'extensions'  => '<path d="M13.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9l-6.5-7z"/><path d="M10 12l2 2 4-4"/>',
+    'api'         => '<path d="M4 17l6-6-6-6"/><path d="M12 19h8"/>',
+    'backup'      => '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>',
+    'updates'     => '<path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><polyline points="21 3 21 8 16 8"/>',
+    'installations' => '<circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>',
+    'guide'       => '<circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/>',
+];
+$_svg = function (string $paths): string {
+    return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' . $paths . '</svg>';
+};
+
+// Gruppi della sidebar: [chiave => [titolo, [ [menu, url, etichetta, icona, extra] ... ]]]
+$_groups = [
+    'contenuti' => ['Contenuti', [
+        ['pages', '/admin/pages', 'Pagine', 'pages'],
+        ['articles', '/admin/articles', 'Articoli', 'articles'],
+        ['comments', '/admin/comments', 'Commenti', 'comments', $pendingComments > 0 ? (string)$pendingComments : ''],
+        ['media', '/admin/media', 'Media', 'media'],
+        ['galleries', '/admin/galleries', 'Gallerie', 'galleries'],
+    ]],
+    'didattica' => ['Didattica', [
+        ['lessons', '/admin/lessons', 'Lezioni', 'lessons'],
+        ['quizzes', '/admin/quizzes', 'Quiz', 'quizzes'],
+        ['fogliofirme', '/admin/fogliofirme', 'FoglioFirme', 'fogliofirme'],
+    ]],
+    'struttura' => ['Struttura', [
+        ['menus', '/admin/menus', 'Menu', 'menus'],
+        ['layouts', '/admin/layouts', 'Layout Builder', 'layouts'],
+        ['forms', '/admin/forms', 'Form', 'forms'],
+    ]],
+];
+$_system = [
+    ['analytics', '/admin/analytics', 'Analytics', 'analytics'],
+    ['users', '/admin/users', 'Utenti', 'users'],
+    ['themes', '/admin/themes', 'Temi', 'themes'],
+    ['settings', '/admin/settings', 'Impostazioni', 'settings'],
+    ['extensions', '/admin/extensions', 'Estensioni', 'extensions'],
+    ['api', '/admin/api-docs', 'API', 'api'],
+    ['backup', '/admin/backup', 'Backup', 'backup'],
+];
+if ($_role === 'super_administrator') {
+    $_system[] = ['updates', '/admin/updates', 'Aggiornamenti', 'updates'];
+    $_system[] = ['installations', '/admin/installations', 'Installazioni', 'installations'];
+}
+$_system[] = ['guide', '/admin/guide', 'Guida', 'guide'];
+$_groups['sistema'] = ['Sistema', $_system];
+
+// Menu estensioni attive
+$extMenuItems = $app->extensions->getAdminMenuItems();
+
+$_navItem = function (array $it) use ($_base, $_active, $_ico, $_svg): string {
+    [$key, $url, $label, $icon] = $it;
+    $badge = $it[4] ?? '';
+    $isActive = $_active === $key;
+    $h = '<a href="' . $_base . $url . '" class="nav-item' . ($isActive ? ' active' : '') . '"'
+       . ($isActive ? ' aria-current="page"' : '') . ' data-nav-label="' . ocms_escape($label) . '">'
+       . $_svg($_ico[$icon] ?? $_ico['extensions'])
+       . '<span class="nav-label">' . ocms_escape($label) . '</span>';
+    if ($badge !== '') {
+        $h .= '<span class="nav-count" aria-label="' . ocms_escape($badge) . ' in attesa">' . ocms_escape($badge) . '</span>';
+    }
+    return $h . '</a>';
+};
+$_chevron = '<svg class="nav-chevron" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 6 15 12 9 18"/></svg>';
+?>
 <!DOCTYPE html>
-<html lang="it">
+<html lang="it" class="no-js">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="robots" content="noindex, nofollow">
     <title><?= ocms_escape($pageTitle ?? 'Admin') ?> — O-CMS</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="<?= ocms_base_url() ?>/admin/assets/css/admin.css">
+    <script>
+    (function () {
+        var r = document.documentElement;
+        r.classList.remove('no-js'); r.classList.add('js');
+        try { if (localStorage.getItem('ocms-admin-sidebar') === 'collapsed') r.setAttribute('data-sidebar', 'collapsed'); } catch (e) {}
+    })();
+    </script>
+    <script src="<?= $_base ?>/assets/ocms/ocms-theme.js<?= $_assetVer('/assets/ocms/ocms-theme.js') ?>"></script>
+    <link rel="stylesheet" href="<?= $_base ?>/assets/ocms/tokens.css<?= $_assetVer('/assets/ocms/tokens.css') ?>">
+    <link rel="stylesheet" href="<?= $_base ?>/admin/assets/css/admin.css<?= $_assetVer('/admin/assets/css/admin.css') ?>">
+    <script src="<?= $_base ?>/admin/assets/js/admin.js<?= $_assetVer('/admin/assets/js/admin.js') ?>" defer></script>
     <?= $headExtra ?? '' ?>
 </head>
-<body>
+<body class="admin-body" data-base-url="<?= ocms_escape($_base) ?>" data-user="<?= ocms_escape(substr(hash('sha256', (string)($app->auth->user()['username'] ?? '')), 0, 12)) ?>">
+<div class="ocms-aurora" aria-hidden="true"></div>
+<a class="skip-link" href="#main-content">Vai al contenuto</a>
 
 <!-- SIDEBAR -->
-<nav class="sidebar">
+<aside class="sidebar ocms-glass" id="admin-sidebar" aria-label="Menu di amministrazione">
     <div class="sidebar-logo">
-        <h2>O-CMS</h2>
+        <a href="<?= $_base ?>/admin" class="brand" aria-label="O-CMS, vai alla dashboard">
+            <span class="brand-mark" aria-hidden="true">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="8"/><path d="M4 15c3 2 6.5 2 8 0s5-2 8 0"/></svg>
+            </span>
+            <span class="brand-name">O-CMS</span>
+        </a>
+        <button type="button" class="sidebar-collapse" data-sidebar-toggle aria-pressed="false" aria-label="Riduci la barra laterale" title="Riduci la barra laterale">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/><path d="m15 10-2 2 2 2"/></svg>
+        </button>
+        <button type="button" class="icon-btn sidebar-close" data-menu-close aria-label="Chiudi il menu">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+        </button>
     </div>
 
-    <div class="sidebar-nav">
-        <!-- Ricerca rapida -->
-        <div style="padding:0 12px 16px;position:relative;">
-            <input type="text" id="admin-search" class="form-input" placeholder="Cerca..." style="padding:8px 12px;font-size:0.85rem;background:var(--bg);border-radius:8px;">
-            <div id="search-results" style="display:none;position:absolute;left:12px;right:12px;top:100%;background:var(--bg-sidebar);border:1px solid var(--border);border-radius:8px;max-height:300px;overflow-y:auto;z-index:50;box-shadow:0 8px 24px rgba(0,0,0,0.3);"></div>
-        </div>
+    <nav class="sidebar-nav" aria-label="Sezioni">
         <div class="nav-section">
-            <div class="nav-section-title">Generale</div>
-            <a href="<?= ocms_base_url() ?>/admin" class="nav-item <?= ($activeMenu ?? '') === 'dashboard' ? 'active' : '' ?>">
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg>
-                Dashboard
-            </a>
+            <?= $_navItem(['dashboard', '/admin', 'Dashboard', 'dashboard']) ?>
         </div>
 
-        <div class="nav-section">
-            <div class="nav-section-title">Contenuti</div>
-            <a href="<?= ocms_base_url() ?>/admin/pages" class="nav-item <?= ($activeMenu ?? '') === 'pages' ? 'active' : '' ?>">
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg>
-                Pagine
-            </a>
-            <a href="<?= ocms_base_url() ?>/admin/articles" class="nav-item <?= ($activeMenu ?? '') === 'articles' ? 'active' : '' ?>">
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
-                Articoli
-            </a>
-            <?php $pendingComments = $app->storage->count('comments', fn($c) => ($c['status'] ?? '') === 'pending'); ?>
-            <a href="<?= ocms_base_url() ?>/admin/comments" class="nav-item <?= ($activeMenu ?? '') === 'comments' ? 'active' : '' ?>">
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-                Commenti
-                <?php if ($pendingComments > 0): ?>
-                <span style="background:var(--warning);color:#000;font-size:0.65rem;padding:1px 6px;border-radius:8px;font-weight:700;margin-left:auto;"><?= $pendingComments ?></span>
-                <?php endif; ?>
-            </a>
-            <a href="<?= ocms_base_url() ?>/admin/media" class="nav-item <?= ($activeMenu ?? '') === 'media' ? 'active' : '' ?>">
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>
-                Media
-            </a>
-            <a href="<?= ocms_base_url() ?>/admin/menus" class="nav-item <?= ($activeMenu ?? '') === 'menus' ? 'active' : '' ?>">
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/></svg>
-                Menu
-            </a>
-            <a href="<?= ocms_base_url() ?>/admin/layouts" class="nav-item <?= ($activeMenu ?? '') === 'layouts' ? 'active' : '' ?>">
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
-                Layout Builder
-            </a>
-            <a href="<?= ocms_base_url() ?>/admin/forms" class="nav-item <?= ($activeMenu ?? '') === 'forms' ? 'active' : '' ?>">
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></svg>
-                Form
-            </a>
-            <a href="<?= ocms_base_url() ?>/admin/lessons" class="nav-item <?= ($activeMenu ?? '') === 'lessons' ? 'active' : '' ?>">
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
-                Lezioni
-            </a>
-            <a href="<?= ocms_base_url() ?>/admin/quizzes" class="nav-item <?= ($activeMenu ?? '') === 'quizzes' ? 'active' : '' ?>">
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
-                Quiz
-            </a>
-            <a href="<?= ocms_base_url() ?>/admin/galleries" class="nav-item <?= ($activeMenu ?? '') === 'galleries' ? 'active' : '' ?>">
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>
-                Gallerie
-            </a>
-        </div>
-
-        <div class="nav-section">
-            <div class="nav-section-title">Sistema</div>
-            <a href="<?= ocms_base_url() ?>/admin/analytics" class="nav-item <?= ($activeMenu ?? '') === 'analytics' ? 'active' : '' ?>">
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
-                Analytics
-            </a>
-            <a href="<?= ocms_base_url() ?>/admin/users" class="nav-item <?= ($activeMenu ?? '') === 'users' ? 'active' : '' ?>">
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-                Utenti
-            </a>
-            <a href="<?= ocms_base_url() ?>/admin/themes" class="nav-item <?= ($activeMenu ?? '') === 'themes' ? 'active' : '' ?>">
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2a15 15 0 0 1 4 10 15 15 0 0 1-4 10 15 15 0 0 1-4-10 15 15 0 0 1 4-10z"/></svg>
-                Temi
-            </a>
-            <a href="<?= ocms_base_url() ?>/admin/settings" class="nav-item <?= ($activeMenu ?? '') === 'settings' ? 'active' : '' ?>">
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-                Impostazioni
-            </a>
-            <a href="<?= ocms_base_url() ?>/admin/extensions" class="nav-item <?= ($activeMenu ?? '') === 'extensions' ? 'active' : '' ?>">
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9l-6.5-7z"/><path d="M10 12l2 2 4-4"/></svg>
-                Estensioni
-            </a>
-            <a href="<?= ocms_base_url() ?>/admin/api-docs" class="nav-item <?= ($activeMenu ?? '') === 'api' ? 'active' : '' ?>">
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17l6-6-6-6"/><path d="M12 19h8"/></svg>
-                API
-            </a>
-            <a href="<?= ocms_base_url() ?>/admin/backup" class="nav-item <?= ($activeMenu ?? '') === 'backup' ? 'active' : '' ?>">
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                Backup
-            </a>
-            <a href="<?= ocms_base_url() ?>/admin/guide" class="nav-item <?= ($activeMenu ?? '') === 'guide' ? 'active' : '' ?>">
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-                Guida
-            </a>
-        </div>
-
-        <?php
-        // Menu estensioni attive
-        $extMenuItems = $app->extensions->getAdminMenuItems();
-        if (!empty($extMenuItems)):
+        <?php foreach ($_groups as $gKey => [$gTitle, $gItems]):
+            $gHasActive = in_array($_active, array_column($gItems, 0), true);
         ?>
-        <div class="nav-section">
-            <div class="nav-section-title">Estensioni</div>
-            <?php foreach ($extMenuItems as $extItem): ?>
-            <a href="<?= ocms_escape($extItem['url']) ?>" class="nav-item <?= ($activeMenu ?? '') === 'ext-' . $extItem['id'] ? 'active' : '' ?>">
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9l-6.5-7z"/><path d="M10 12l2 2 4-4"/></svg>
-                <?= ocms_escape($extItem['label']) ?>
-            </a>
+        <details class="nav-section nav-group" data-group="<?= $gKey ?>" open<?= $gHasActive ? ' data-has-active' : '' ?>>
+            <summary class="nav-section-title"><span class="nav-label"><?= ocms_escape($gTitle) ?></span><?= $_chevron ?></summary>
+            <div class="nav-group-items">
+                <?php foreach ($gItems as $it) echo $_navItem($it); ?>
+            </div>
+        </details>
+        <?php endforeach; ?>
+
+        <?php if (!empty($extMenuItems)):
+            $gHasActive = false;
+            foreach ($extMenuItems as $extItem) { if ($_active === 'ext-' . $extItem['id']) $gHasActive = true; }
+        ?>
+        <details class="nav-section nav-group" data-group="estensioni" open<?= $gHasActive ? ' data-has-active' : '' ?>>
+            <summary class="nav-section-title"><span class="nav-label">Estensioni</span><?= $_chevron ?></summary>
+            <div class="nav-group-items">
+            <?php foreach ($extMenuItems as $extItem):
+                $extActive = $_active === 'ext-' . $extItem['id']; ?>
+                <a href="<?= ocms_escape($extItem['url']) ?>" class="nav-item<?= $extActive ? ' active' : '' ?>"<?= $extActive ? ' aria-current="page"' : '' ?> data-nav-label="<?= ocms_escape($extItem['label']) ?>">
+                    <?= $_svg($_ico['extensions']) ?>
+                    <span class="nav-label"><?= ocms_escape($extItem['label']) ?></span>
+                </a>
             <?php endforeach; ?>
-        </div>
+            </div>
+        </details>
         <?php endif; ?>
-    </div>
+    </nav>
 
     <div class="sidebar-footer">
-        <div class="user-info">
-            <div class="user-avatar">
-                <?= strtoupper(mb_substr($app->auth->user()['display_name'] ?? 'A', 0, 1)) ?>
-            </div>
-            <div class="user-details">
-                <div class="name"><?= ocms_escape($app->auth->user()['display_name'] ?? '') ?></div>
-                <?php $roleLabels = Auth::getRoleLabels(); ?>
-                <div class="role"><?= ocms_escape($roleLabels[$app->auth->user()['role'] ?? ''] ?? ucfirst(str_replace('_', ' ', $app->auth->user()['role'] ?? ''))) ?></div>
-            </div>
-        </div>
-        <form method="POST" action="<?= ocms_base_url() ?>/admin/logout" style="margin:0;">
-            <?= ocms_csrf_field() ?>
-            <button type="submit" class="nav-item logout-link" style="background:none;border:none;width:100%;text-align:left;font:inherit;cursor:pointer;">
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
-                Esci
-            </button>
-        </form>
+        <a href="<?= $_base ?>/" class="nav-item" target="_blank" rel="noopener" data-nav-label="Vai al sito">
+            <?= $_svg('<path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/>') ?>
+            <span class="nav-label">Vai al sito<?= defined('OCMS_VERSION') ? ' <small class="text-muted">· v' . ocms_escape(OCMS_VERSION) . '</small>' : '' ?></span>
+        </a>
     </div>
-</nav>
-
-<!-- MAIN -->
-<div class="main">
-    <?php foreach (ocms_flash_get() as $flash): ?>
-        <div class="flash-message <?= ocms_escape($flash['type']) ?>">
-            <?= ocms_escape($flash['message']) ?>
-        </div>
-    <?php endforeach; ?>
-
-    <?= $content ?? '' ?>
-</div>
-
+</aside>
 <script>
-(function(){
-    const input = document.getElementById('admin-search');
-    const box = document.getElementById('search-results');
-    const BASE = '<?= ocms_base_url() ?>';
-    if (!input) return;
-    let timer;
-
-    // Enter → vai alla ricerca avanzata
-    input.addEventListener('keydown', function(e) {
-        if (e.key === 'Enter') {
-            e.preventDefault();
-            const q = this.value.trim();
-            if (q) window.location.href = BASE + '/admin/search/full?q=' + encodeURIComponent(q);
-        }
+// Stato dei gruppi applicato subito (prima del disegno), il resto in admin.js
+(function () {
+    var st = {};
+    try { st = JSON.parse(localStorage.getItem('ocms-admin-nav') || '{}') || {}; } catch (e) {}
+    document.querySelectorAll('#admin-sidebar details[data-group]').forEach(function (d) {
+        var k = d.getAttribute('data-group');
+        if (st[k] === false && !d.hasAttribute('data-has-active')) d.open = false;
     });
-
-    input.addEventListener('input', function() {
-        clearTimeout(timer);
-        const q = this.value.trim();
-        if (q.length < 2) { box.style.display='none'; return; }
-        timer = setTimeout(async () => {
-            const res = await fetch(BASE + '/admin/search?q=' + encodeURIComponent(q));
-            const data = await res.json();
-            let html = '';
-            if (data.results.length) {
-                html = data.results.map(r =>
-                    '<a href="'+r.url+'" style="display:flex;gap:8px;align-items:center;padding:8px 12px;color:var(--text);font-size:0.85rem;text-decoration:none;border-bottom:1px solid var(--border);">'
-                    +'<span style="flex-shrink:0;opacity:0.6;">'+r.icon+'</span>'
-                    +'<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">'+r.title+'</span>'
-                    +'<span style="font-size:0.7rem;color:var(--text-muted);flex-shrink:0;">'+r.type_label+'</span>'
-                    +'</a>'
-                ).join('');
-            } else {
-                html = '<div style="padding:12px;color:var(--text-muted);font-size:0.85rem;">Nessun risultato</div>';
-            }
-            // Link ricerca avanzata
-            html += '<a href="'+BASE+'/admin/search/full?q='+encodeURIComponent(q)+'" style="display:block;padding:8px 12px;font-size:0.8rem;font-weight:600;color:var(--primary-light);text-align:center;border-top:1px solid var(--border);text-decoration:none;">Ricerca avanzata →</a>';
-            box.innerHTML = html;
-            box.style.display = 'block';
-        }, 200);
-    });
-    input.addEventListener('blur', () => setTimeout(()=>box.style.display='none', 200));
-    input.addEventListener('focus', function() { if (this.value.trim().length >= 2) this.dispatchEvent(new Event('input')); });
 })();
 </script>
+<div class="sidebar-backdrop" data-menu-close aria-hidden="true"></div>
+
+<!-- MAIN -->
+<div class="main" id="admin-main">
+    <header class="topbar ocms-glass">
+        <button type="button" class="icon-btn topbar-menu" data-menu-toggle aria-controls="admin-sidebar" aria-expanded="false" aria-label="Apri il menu">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h10"/></svg>
+        </button>
+
+        <form class="search-form" role="search" method="get" action="<?= $_base ?>/admin/search/full">
+            <label class="visually-hidden" for="admin-search">Cerca nei contenuti</label>
+            <input type="search" id="admin-search" name="q" class="form-input" placeholder="Cerca nei contenuti…">
+        </form>
+        <button type="button" class="search-trigger" data-cmdk-open aria-haspopup="dialog" aria-controls="cmdk">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+            <span class="label">Cerca o vai a…</span>
+            <kbd data-shortcut-label>Ctrl K</kbd>
+        </button>
+
+        <div class="topbar-actions">
+            <a class="icon-btn" href="<?= $_base ?>/" target="_blank" rel="noopener" aria-label="Apri il sito in una nuova scheda" title="Vai al sito">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+            </a>
+            <button type="button" class="icon-btn" data-ocms-theme-toggle aria-label="Cambia tema">
+                <svg class="theme-icon-moon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+                <svg class="theme-icon-sun" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+            </button>
+            <div class="user-chip" title="<?= ocms_escape($_displayName) ?> — <?= ocms_escape($_roleLabel) ?>">
+                <div class="user-avatar" aria-hidden="true"><?= ocms_escape(mb_strtoupper(mb_substr($_displayName !== '' ? $_displayName : 'A', 0, 1))) ?></div>
+                <div class="user-details">
+                    <div class="name"><?= ocms_escape($_displayName) ?></div>
+                    <div class="role"><?= ocms_escape($_roleLabel) ?></div>
+                </div>
+            </div>
+            <form method="POST" action="<?= $_base ?>/admin/logout" data-no-loading data-ocms-logout>
+                <?= ocms_csrf_field() ?>
+                <button type="submit" class="icon-btn danger" aria-label="Esci" title="Esci">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+                </button>
+            </form>
+        </div>
+    </header>
+
+    <main class="main-content" id="main-content" tabindex="-1">
+        <?= $content ?? '' ?>
+    </main>
+</div>
+
+<!-- Notifiche (messaggi flash) -->
+<div class="toast-region" id="toast-region" aria-live="polite">
+    <?php foreach (ocms_flash_get() as $flash):
+        $_ft = in_array($flash['type'] ?? '', ['success', 'error', 'warning', 'info'], true) ? $flash['type'] : 'info';
+        $_isErr = $_ft === 'error';
+    ?>
+    <div class="toast toast-<?= $_ft ?>" role="<?= $_isErr ? 'alert' : 'status' ?>" data-toast data-type="<?= $_ft ?>"<?= $_isErr ? '' : ' data-autodismiss="6000"' ?>>
+        <span class="toast-icon" aria-hidden="true">
+            <?php if ($_ft === 'success'): ?>
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+            <?php elseif ($_isErr): ?>
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M12 7v6M12 17h.01"/></svg>
+            <?php else: ?>
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M12 8h.01M12 11v6"/></svg>
+            <?php endif; ?>
+        </span>
+        <p class="toast-msg"><?= ocms_escape($flash['message'] ?? '') ?></p>
+        <button type="button" class="toast-close" data-toast-close aria-label="Chiudi notifica">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+        </button>
+        <?php if (!$_isErr): ?><span class="toast-timer" aria-hidden="true"></span><?php endif; ?>
+    </div>
+    <?php endforeach; ?>
+</div>
+
+<!-- Palette comandi (Ctrl/Cmd+K): popolata da admin.js -->
+<dialog class="cmdk ocms-glass" id="cmdk" aria-label="Cerca e vai a">
+    <div class="cmdk-head">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        <input type="text" class="cmdk-input" id="cmdk-input" role="combobox" aria-expanded="true" aria-controls="cmdk-list" aria-autocomplete="list" autocomplete="off" spellcheck="false" placeholder="Cerca sezioni, azioni, contenuti…" aria-label="Cerca sezioni, azioni e contenuti">
+        <kbd>Esc</kbd>
+    </div>
+    <ul class="cmdk-list" id="cmdk-list" role="listbox" aria-label="Risultati"></ul>
+    <div class="cmdk-foot" aria-hidden="true">
+        <span><kbd>↑</kbd><kbd>↓</kbd> scegli</span>
+        <span><kbd>Invio</kbd> apri</span>
+        <span><kbd>Esc</kbd> chiudi</span>
+    </div>
+</dialog>
+
 <?= $footerExtra ?? '' ?>
 </body>
 </html>

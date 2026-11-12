@@ -1,0 +1,24 @@
+<?php
+require __DIR__ . '/../lib.php';
+define('OCMS_ROOT', dirname(__DIR__, 2));
+require OCMS_ROOT . '/core/Helpers.php';
+t('header: CRLF rimossi', !preg_match('/[\r\n]/', ocms_mail_header_safe("Mario\r\n.\r\nMAIL FROM:<x@y>\r\nRCPT TO:<v@z>")));
+t('header: testo normale intatto', ocms_mail_header_safe('Nuovo messaggio da Anna') === 'Nuovo messaggio da Anna');
+t('subject UTF-8 codificato', str_starts_with(ocms_mail_encode_header('Perché sì'), '=?UTF-8?B?'));
+$b = ocms_mail_body_safe("riga\n.\nMAIL FROM:<x>\n..due");
+t('corpo: nessuna riga composta dal solo punto', !preg_match('/\r\n\.\r\n/', "\r\n" . $b . "\r\n"));
+t('corpo: dot-stuffing', str_contains($b, "\r\n..\r\n") && str_contains($b, "\r\n...due"));
+t('csv: formula neutralizzata', ocms_csv_safe('=HYPERLINK("x")') === "'=HYPERLINK(\"x\")");
+t('csv: numero negativo intatto', ocms_csv_safe('-3') === '-3');
+t('csv: testo normale intatto', ocms_csv_safe('Rossi') === 'Rossi');
+t('upload: foto.php.jpg rifiutato', !ocms_upload_name_ok('foto.php.jpg'));
+t('upload: .htaccess rifiutato', !ocms_upload_name_ok('.htaccess'));
+t('upload: esercizio.py ammesso nelle lezioni', ocms_upload_name_ok('esercizio.py'));
+t('upload: estensione non coerente col MIME', !ocms_upload_name_ok('x.php', ocms_ext_for_mime('image/gif')) && ocms_upload_name_ok('x.GIF', ocms_ext_for_mime('image/gif')));
+t('date future', ocms_is_future(date('c', time() + 3600)) && !ocms_is_future(date('c', time() - 60)) && !ocms_is_future(''));
+t('date: fusi diversi confrontati come istanti', !ocms_is_future(gmdate('Y-m-d\TH:i:s\Z', time() - 60)));
+t('lezioni: sorgente .jsp reso innocuo', ocms_lesson_safe_name('Esempio.jsp') === 'Esempio_jsp.txt');
+t('lezioni: .htaccess reso innocuo', ocms_lesson_safe_name('.htaccess') === '_htaccess');
+t('lezioni: index.php → index_php.txt', ocms_lesson_safe_name('index.php') === 'index_php.txt');
+t('lezioni: pdf invariato', ocms_lesson_safe_name('dispensa 1.pdf') === 'dispensa_1.pdf');
+done();

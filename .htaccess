@@ -1,7 +1,27 @@
 RewriteEngine On
 
-# Proteggi la cartella data
-RewriteRule ^data/ - [F,L]
+# Su PHP in CGI/FastCGI (es. Aruba) Apache non passa l'header Authorization:
+# senza questa riga le API con "Authorization: Bearer ..." risponderebbero 401
+RewriteCond %{HTTP:Authorization} .
+RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+
+# === PERSONALIZZAZIONI DEL SITO ===
+# Qui le regole proprie di questa installazione (redirect 301, ecc.).
+# L'aggiornamento automatico conserva tutto ciò che sta fra questa riga e la riga FINE.
+# === FINE PERSONALIZZAZIONI ===
+
+# Cartelle e file interni: mai accessibili dal browser
+RewriteRule ^(core|data)/ - [F,L]
+RewriteRule ^admin/views/ - [F,L]
+RewriteRule ^themes/[^/]+/templates/ - [F,L]
+RewriteRule ^(install\.lock|composer\.(json|lock)|tests/|docs/) - [F,L]
+
+# Negli upload nessuno script deve essere eseguibile (anche se qualcuno riuscisse a caricarlo)
+RewriteRule ^uploads/.*\.(php\d?|phtml|pht|phar|phps|pgif|cgi|fcgi|shtml)$ - [F,NC,L]
+RewriteRule ^uploads/(.*/)?\.ht - [F,L]
+
+# API REST su /api/... (gestite dall'entry point admin)
+RewriteRule ^api/ admin/index.php [QSA,L]
 
 # Non riscrivere file e cartelle esistenti — riscrittura per admin
 RewriteCond %{REQUEST_FILENAME} !-f

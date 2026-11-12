@@ -34,7 +34,7 @@ ob_start();
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/jodit/4.6.13/es2015/jodit.min.css">
 <?php $headExtra = ob_get_clean(); ob_start(); ?>
 
-<form method="POST" action="<?= ocms_base_url() ?>/admin/articles/save" id="article-form" enctype="multipart/form-data">
+<form method="POST" action="<?= ocms_base_url() ?>/admin/articles/save" id="article-form" enctype="multipart/form-data" data-ocms-autosave="article" data-updated-at="<?= ocms_escape($article['updated_at'] ?? '') ?>">
     <?= ocms_csrf_field() ?>
     <input type="hidden" name="id" value="<?= ocms_escape($article['id']) ?>">
     <input type="hidden" name="original_slug" value="<?= ocms_escape($article['slug']) ?>">
@@ -43,7 +43,7 @@ ob_start();
 
     <div class="page-header">
         <h1><?= $isNew ? 'Nuovo Articolo' : 'Modifica Articolo' ?></h1>
-        <div style="display:flex;gap:10px;align-items:center;">
+        <div class="btn-row">
             <?php if (!$isNew): ?>
             <a href="<?= ocms_base_url() ?>/admin/articles/revisions/<?= ocms_escape($article['slug']) ?>" class="btn btn-secondary btn-sm" title="Revisioni">
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
@@ -59,29 +59,27 @@ ob_start();
     <div class="editor-layout">
         <div class="editor-main">
             <!-- Titolo -->
-            <div class="card" style="margin-bottom:20px;">
-                <input type="text" name="title" class="form-input" placeholder="Titolo dell'articolo"
-                       value="<?= ocms_escape($article['title']) ?>" id="art-title" required
-                       style="font-size:1.4rem;font-weight:700;padding:16px;background:transparent;border:none;">
+            <div class="card card-title-field mb-20">
+                <input type="text" name="title" class="form-input title-input" placeholder="Titolo dell'articolo"
+                       value="<?= ocms_escape($article['title']) ?>" id="art-title" required aria-label="Titolo">
             </div>
 
             <!-- Excerpt -->
-            <div class="card" style="margin-bottom:20px;">
-                <div class="form-group" style="margin-bottom:0;">
+            <div class="card mb-20">
+                <div class="form-group mb-0">
                     <label>Estratto</label>
-                    <textarea name="excerpt" class="form-textarea" rows="2" placeholder="Breve descrizione per le anteprime..."
-                              style="min-height:50px;"><?= ocms_escape($article['excerpt']) ?></textarea>
+                    <textarea name="excerpt" class="form-textarea textarea-short" rows="2" placeholder="Breve descrizione per le anteprime..."
+                              ><?= ocms_escape($article['excerpt']) ?></textarea>
                 </div>
             </div>
 
             <!-- Editor -->
-            <div class="card" style="margin-bottom:20px;">
-                <div class="form-group" style="margin-bottom:0;">
-                    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
-                        <label style="margin-bottom:0;">Contenuto</label>
+            <div class="card mb-20">
+                <div class="form-group mb-0">
+                    <div class="label-row">
+                        <label>Contenuto</label>
                         <?php if ($_aiEnabled): ?>
-                        <button type="button" id="ai-btn" onclick="openAiModal()"
-                                style="display:inline-flex;align-items:center;gap:6px;padding:6px 14px;background:linear-gradient(135deg,#8b5cf6,#6366f1);color:#fff;border:none;border-radius:8px;font-size:0.8rem;font-weight:600;cursor:pointer;font-family:inherit;transition:transform .15s,box-shadow .15s;">
+                        <button type="button" id="ai-btn" onclick="openAiModal()" class="btn-ai">
                             <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a4 4 0 0 1 4 4c0 1.95-1.4 3.58-3.25 3.93L12 22"/><path d="M8 6a4 4 0 0 1 8 0"/><path d="M17 12.5c1.77.77 3 2.53 3 4.5a5 5 0 0 1-10 0"/><path d="M4 17a5 5 0 0 1 3-4.5"/></svg>
                             Chiedi a <?= $_aiName ?>
                         </button>
@@ -101,54 +99,54 @@ ob_start();
             </div>
 
             <!-- Modale AI -->
-            <div id="ai-modal" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.7);backdrop-filter:blur(4px);align-items:center;justify-content:center;">
-                <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:16px;padding:28px;width:90%;max-width:580px;box-shadow:0 20px 60px rgba(0,0,0,0.5);">
-                    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;">
-                        <h3 style="font-size:1.1rem;font-weight:700;display:flex;align-items:center;gap:8px;">
+            <div id="ai-modal" class="modal-backdrop" style="display:none;">
+                <div class="modal-box" role="dialog" aria-modal="true" aria-labelledby="ai-modal-title">
+                    <div class="modal-head">
+                        <h3 id="ai-modal-title">
                             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#8b5cf6" stroke-width="2"><path d="M12 2a4 4 0 0 1 4 4c0 1.95-1.4 3.58-3.25 3.93L12 22"/><path d="M8 6a4 4 0 0 1 8 0"/><path d="M17 12.5c1.77.77 3 2.53 3 4.5a5 5 0 0 1-10 0"/><path d="M4 17a5 5 0 0 1 3-4.5"/></svg>
                             Chiedi a <?= $_aiName ?>
                         </h3>
-                        <button type="button" onclick="closeAiModal()" style="background:none;border:none;color:var(--text-muted);font-size:20px;cursor:pointer;">&times;</button>
+                        <button type="button" onclick="closeAiModal()" class="modal-close" aria-label="Chiudi">&times;</button>
                     </div>
 
-                    <p style="color:var(--text-muted);font-size:0.85rem;margin-bottom:16px;">
+                    <p class="text-muted text-sm mb-16">
                         Descrivi l'articolo che vuoi generare. <?= $_aiName ?> scriverà il contenuto in formato HTML pronto per l'editor.
                     </p>
 
                     <textarea id="ai-prompt" class="form-textarea" rows="4" placeholder="Es: Scrivi un articolo su come fare il pane in casa, con consigli per principianti e una sezione sugli errori comuni..."
-                              style="min-height:100px;margin-bottom:16px;"></textarea>
+                              aria-label="Descrizione per l'IA"></textarea>
 
-                    <div style="display:flex;align-items:center;gap:8px;">
-                        <select id="ai-mode" class="form-select" style="width:auto;padding:8px 36px 8px 12px;font-size:0.85rem;">
+                    <div class="modal-actions mt-16">
+                        <select id="ai-mode" class="form-select select-sm" aria-label="Modalità">
                             <option value="write">Scrivi articolo completo</option>
                             <option value="expand">Espandi/migliora il contenuto attuale</option>
                             <option value="rewrite">Riscrivi il contenuto attuale</option>
                         </select>
-                        <span style="flex:1;"></span>
+                        <span class="grow"></span>
                         <button type="button" onclick="closeAiModal()" class="btn btn-secondary btn-sm">Annulla</button>
-                        <button type="button" id="ai-submit" onclick="generateAi()" class="btn btn-sm" style="background:linear-gradient(135deg,#8b5cf6,#6366f1);color:#fff;border:none;">
+                        <button type="button" id="ai-submit" onclick="generateAi()" class="btn btn-sm btn-ai">
                             Genera
                         </button>
                     </div>
 
-                    <div id="ai-loading" style="display:none;margin-top:16px;text-align:center;padding:20px;">
-                        <div style="display:inline-block;width:24px;height:24px;border:3px solid var(--border);border-top-color:var(--primary-light);border-radius:50%;animation:spin 0.8s linear infinite;"></div>
-                        <p style="color:var(--text-muted);font-size:0.85rem;margin-top:10px;"><?= $_aiName ?> sta scrivendo...</p>
+                    <div id="ai-loading" class="ai-loading" style="display:none;">
+                        <div class="spinner"></div>
+                        <p class="text-muted text-sm mt-8"><?= $_aiName ?> sta scrivendo...</p>
                     </div>
-                    <div id="ai-error" style="display:none;margin-top:12px;color:#ef4444;font-size:0.85rem;"></div>
+                    <div id="ai-error" class="text-error text-sm mt-12" style="display:none;" role="alert"></div>
 
                     <style>@keyframes spin { to { transform: rotate(360deg); } }</style>
                 </div>
             </div>
 
             <!-- Galleria Immagini -->
-            <div class="card" style="margin-bottom:20px;">
-                <h3 style="font-size:1rem;font-weight:700;margin-bottom:16px;">
+            <div class="card mb-20">
+                <h3 class="card-title">
                     Galleria Immagini
-                    <span id="gallery-count" style="font-weight:400;font-size:0.8rem;color:var(--text-muted);margin-left:8px;">(<?= count($gallery) ?> foto)</span>
+                    <span id="gallery-count" class="count">(<?= count($gallery) ?> foto)</span>
                 </h3>
 
-                <div id="gallery-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:12px;margin-bottom:16px;">
+                <div id="gallery-grid" class="gallery-grid">
                     <?php foreach ($gallery as $i => $img): ?>
                     <div class="gallery-item" data-index="<?= $i ?>" style="position:relative;border-radius:8px;overflow:hidden;aspect-ratio:4/3;background:var(--bg);border:1px solid var(--border);">
                         <img src="<?= ocms_base_url() . ocms_escape($img['thumb'] ?? $img['url']) ?>" alt="" style="width:100%;height:100%;object-fit:cover;">
@@ -158,27 +156,27 @@ ob_start();
                     <?php endforeach; ?>
                 </div>
 
-                <div id="gallery-dropzone" style="border:2px dashed var(--border);border-radius:8px;padding:20px;text-align:center;cursor:pointer;transition:border-color .2s,background .2s;">
-                    <div style="color:var(--text-muted);font-size:0.85rem;">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="display:block;margin:0 auto 6px;opacity:.5;">
+                <div id="gallery-dropzone" class="dropzone" role="button" tabindex="0" aria-label="Aggiungi immagini alla galleria">
+                    <div>
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="dropzone-icon" aria-hidden="true">
                             <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/>
                         </svg>
-                        Trascina immagini o <span style="color:var(--primary-light);text-decoration:underline;">sfoglia</span>
-                        <div style="font-size:0.7rem;margin-top:4px;opacity:.6;">Upload multiplo supportato</div>
+                        Trascina immagini o <span class="link">sfoglia</span>
+                        <div class="sub">Upload multiplo supportato</div>
                     </div>
                     <input type="file" id="gallery-file" accept="image/*" multiple style="display:none;">
                 </div>
-                <div id="gallery-progress" style="display:none;margin-top:8px;">
-                    <div style="background:var(--bg-light);border-radius:4px;overflow:hidden;height:4px;">
-                        <div id="gallery-progress-bar" style="height:100%;background:var(--primary);width:0%;transition:width .3s;"></div>
+                <div id="gallery-progress" class="mt-8" style="display:none;">
+                    <div class="progress-track">
+                        <div id="gallery-progress-bar" class="progress-fill"></div>
                     </div>
-                    <div id="gallery-progress-text" style="font-size:0.75rem;color:var(--text-muted);margin-top:4px;"></div>
+                    <div id="gallery-progress-text" class="form-hint"></div>
                 </div>
             </div>
 
             <!-- SEO -->
             <div class="card">
-                <h3 style="font-size:1rem;font-weight:700;margin-bottom:16px;">SEO</h3>
+                <h3 class="card-title">SEO</h3>
                 <div class="form-group">
                     <label>Meta Title</label>
                     <input type="text" name="meta_title" id="meta_title" class="form-input"
@@ -187,8 +185,8 @@ ob_start();
                 </div>
                 <div class="form-group">
                     <label>Meta Description</label>
-                    <textarea name="meta_description" id="meta_description" class="form-textarea" rows="2"
-                              style="min-height:60px;" placeholder="Descrizione per i motori di ricerca"><?= ocms_escape($article['meta']['description'] ?? '') ?></textarea>
+                    <textarea name="meta_description" id="meta_description" class="form-textarea textarea-short" rows="2"
+                              placeholder="Descrizione per i motori di ricerca"><?= ocms_escape($article['meta']['description'] ?? '') ?></textarea>
                 </div>
                 <input type="hidden" name="og_image" value="<?= ocms_escape($article['meta']['og_image'] ?? '') ?>">
             </div>
@@ -197,31 +195,29 @@ ob_start();
         <div class="editor-sidebar">
             <!-- Stato -->
             <div class="card">
-                <h3 style="font-size:1rem;font-weight:700;margin-bottom:16px;">Pubblicazione</h3>
+                <h3 class="card-title">Pubblicazione</h3>
                 <span class="badge <?= $article['status'] === 'published' ? 'badge-published' : 'badge-draft' ?>">
                     <?= $article['status'] === 'published' ? 'Pubblicato' : 'Bozza' ?>
                 </span>
                 <?php if ($article['updated_at']): ?>
-                <div style="margin-top:8px;font-size:0.8rem;color:var(--text-muted);">
+                <div class="meta-line">
                     Aggiornato: <?= ocms_format_date($article['updated_at']) ?>
                 </div>
                 <?php endif; ?>
 
                 <!-- Pubblicazione programmata -->
-                <div class="form-group" style="margin-top:16px;margin-bottom:0;">
-                    <label>Pubblica il</label>
-                    <input type="datetime-local" name="publish_at" class="form-input" value="<?= ocms_escape($publishAtLocal) ?>"
-                           style="font-size:0.85rem;">
+                <div class="form-group mt-16 mb-0">
+                    <label for="art-publish-at">Pubblica il</label>
+                    <input type="datetime-local" name="publish_at" id="art-publish-at" class="form-input" value="<?= ocms_escape($publishAtLocal) ?>">
                     <div class="form-hint">Lascia vuoto per pubblicazione immediata</div>
                 </div>
 
                 <!-- In evidenza -->
-                <div style="margin-top:16px;">
-                    <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:0.85rem;color:var(--text);margin-bottom:0;text-transform:none;letter-spacing:0;">
-                        <input type="checkbox" name="featured" value="1" <?= !empty($article['featured']) ? 'checked' : '' ?>
-                               style="width:18px;height:18px;accent-color:var(--primary);cursor:pointer;">
+                <div class="mt-16">
+                    <label class="check-label">
+                        <input type="checkbox" name="featured" value="1" <?= !empty($article['featured']) ? 'checked' : '' ?>>
                         <span>
-                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="<?= !empty($article['featured']) ? '#f59e0b' : 'none' ?>" stroke="#f59e0b" stroke-width="2" style="vertical-align:-2px;margin-right:2px;"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="<?= !empty($article['featured']) ? '#f59e0b' : 'none' ?>" stroke="#f59e0b" stroke-width="2" class="star-icon" aria-hidden="true"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
                             In evidenza
                         </span>
                     </label>
@@ -231,8 +227,8 @@ ob_start();
 
             <!-- Slug -->
             <div class="card">
-                <div class="form-group" style="margin-bottom:0;">
-                    <label>Slug</label>
+                <div class="form-group mb-0">
+                    <label for="art-slug">Slug</label>
                     <input type="text" name="slug" id="art-slug" class="form-input"
                            placeholder="auto-generato" value="<?= ocms_escape($article['slug']) ?>">
                 </div>
@@ -240,48 +236,44 @@ ob_start();
 
             <!-- Cover Image -->
             <div class="card">
-                <div class="form-group" style="margin-bottom:0;">
+                <div class="form-group mb-0">
                     <label>Immagine di copertina</label>
                     <input type="hidden" name="cover_image" id="cover-input" value="<?= ocms_escape($article['cover_image']) ?>">
 
                     <?php $hasCover = !empty($article['cover_image']); ?>
-                    <div id="cover-preview" style="<?= $hasCover ? '' : 'display:none;' ?>margin-bottom:10px;position:relative;">
+                    <div id="cover-preview" class="relative mb-12" style="<?= $hasCover ? '' : 'display:none;' ?>">
                         <img id="cover-img" src="<?= $hasCover ? ocms_base_url() . ocms_escape($article['cover_image']) : '' ?>"
-                             alt="Cover" style="width:100%;border-radius:8px;aspect-ratio:1200/630;object-fit:cover;">
-                        <button type="button" id="cover-remove" title="Rimuovi"
-                                style="position:absolute;top:6px;right:6px;width:28px;height:28px;border-radius:50%;border:none;
-                                       background:rgba(0,0,0,0.7);color:#fff;cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center;">
+                             alt="Cover" class="cover-img">
+                        <button type="button" id="cover-remove" title="Rimuovi" aria-label="Rimuovi la copertina" class="thumb-remove">
                             &times;
                         </button>
                     </div>
 
-                    <div id="cover-dropzone" style="<?= $hasCover ? 'display:none;' : '' ?>border:2px dashed var(--border);border-radius:8px;padding:24px;
-                                text-align:center;cursor:pointer;transition:border-color .2s,background .2s;">
-                        <div style="color:var(--text-muted);font-size:0.85rem;">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="display:block;margin:0 auto 8px;opacity:.5;">
+                    <div id="cover-dropzone" class="dropzone" role="button" tabindex="0" aria-label="Carica l'immagine di copertina" style="<?= $hasCover ? 'display:none;' : '' ?>">
+                        <div>
+                            <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="dropzone-icon" aria-hidden="true">
                                 <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/>
                             </svg>
-                            Trascina o <span style="color:var(--primary-light);text-decoration:underline;">sfoglia</span>
-                            <div style="font-size:0.75rem;margin-top:4px;opacity:.6;">1200&times;630 automatico</div>
+                            Trascina o <span class="link">sfoglia</span>
+                            <div class="sub">1200&times;630 automatico</div>
                         </div>
-                        <input type="file" id="cover-file" accept="image/jpeg,image/png,image/gif,image/webp"
-                               style="display:none;">
+                        <input type="file" id="cover-file" accept="image/jpeg,image/png,image/gif,image/webp" hidden>
                     </div>
 
-                    <div id="cover-progress" style="display:none;margin-top:8px;">
-                        <div style="background:var(--bg-light);border-radius:4px;overflow:hidden;height:4px;">
-                            <div id="cover-progress-bar" style="height:100%;background:var(--primary);width:0%;transition:width .3s;"></div>
+                    <div id="cover-progress" class="mt-8" style="display:none;">
+                        <div class="progress-track">
+                            <div id="cover-progress-bar" class="progress-fill"></div>
                         </div>
                     </div>
-                    <div id="cover-error" style="display:none;color:#ef4444;font-size:0.8rem;margin-top:6px;"></div>
+                    <div id="cover-error" class="text-error text-sm mt-8" style="display:none;" role="alert"></div>
                 </div>
             </div>
 
             <!-- Categoria -->
             <div class="card">
-                <div class="form-group" style="margin-bottom:0;">
-                    <label>Categoria</label>
-                    <select name="category" class="form-select">
+                <div class="form-group mb-0">
+                    <label for="art-category">Categoria</label>
+                    <select name="category" id="art-category" class="form-select">
                         <option value="">— Nessuna —</option>
                         <?php foreach ($categories as $cat): ?>
                             <option value="<?= ocms_escape($cat['slug']) ?>"
@@ -295,7 +287,7 @@ ob_start();
 
             <!-- Tags -->
             <div class="card">
-                <div class="form-group" style="margin-bottom:0;">
+                <div class="form-group mb-0">
                     <label>Tag</label>
                     <input type="text" name="tags" class="form-input"
                            placeholder="tag1, tag2, tag3"
