@@ -9,7 +9,7 @@ $_ocmsDebug = is_file(__DIR__ . '/data/.debug') || is_file(dirname(__DIR__) . '/
 ini_set('display_errors', $_ocmsDebug ? '1' : '0');
 ini_set('log_errors', '1');
 
-define('OCMS_VERSION', '2.0.2');
+define('OCMS_VERSION', '2.0.3');
 define('OCMS_ROOT', __DIR__);
 
 // Sito non ancora installato: si va al wizard invece di mostrare un 404

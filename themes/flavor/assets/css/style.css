@@ -562,6 +562,11 @@ input[type="search"]::-webkit-search-cancel-button { filter: grayscale(1); opaci
 .page-head { padding: 52px 0 28px; }
 .page-head-narrow { max-width: 780px; }
 /* Pagine statiche: testo largo quanto la testata, righe leggibili (~75 caratteri) */
+/* Template "Larghezza Piena": il contenuto usa tutta la larghezza e il proprio stile;
+   il padding lascia spazio ai blocchi che sbordano di 24px (hero a filo) */
+.static-page-full { padding-top: 28px; }
+.static-page-full .page-full { padding: 24px; overflow-wrap: anywhere; }
+@media (max-width: 560px) { .static-page-full .page-full { padding: 24px 8px; } }
 .static-page .prose-page,
 .static-page .page-foot { max-width: 780px; margin-inline: auto; }
 .page-head-count { margin-top: 10px; color: var(--ocms-text-muted); }

@@ -2,6 +2,11 @@
 
 All notable changes to O-CMS will be documented in this file.
 
+## [2.0.3] - 2026-11-12
+
+### Correzioni
+- Il template di pagina "Larghezza Piena", già proposto nell'admin, ora funziona nel tema flavor: niente titolo automatico e contenuto a tutta larghezza, per le pagine che hanno una propria impaginazione.
+
 ## [2.0.2] - 2026-11-12
 
 ### Correzioni

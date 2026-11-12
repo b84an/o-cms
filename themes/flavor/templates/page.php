@@ -15,13 +15,20 @@ $flavor = [
 ];
 include __DIR__ . '/_header.php';
 ?>
-<article class="static-page">
+<?php
+// Template "Larghezza Piena" (scelto nell'admin): il contenuto porta il proprio titolo
+// e la propria impaginazione, quindi niente testata e niente limite di larghezza
+$fullWidth = ($page['template'] ?? '') === 'full-width';
+?>
+<article class="static-page<?= $fullWidth ? ' static-page-full' : '' ?>">
+<?php if (!$fullWidth): ?>
     <header class="wrap page-head page-head-narrow">
         <h1 class="display"><?= ocms_escape($page['title'] ?? '') ?></h1>
     </header>
+<?php endif; ?>
     <div class="wrap">
         <?= flavor_flashes($flashes) ?>
-        <div class="prose prose-page">
+        <div class="<?= $fullWidth ? 'page-full' : 'prose prose-page' ?>">
             <?= flavor_content((string) ($page['content'] ?? '')) ?>
         </div>
 <?php if (($page['views'] ?? 0) > 0 || !empty($page['updated_at'])): ?>
