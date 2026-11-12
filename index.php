@@ -12,6 +12,13 @@ ini_set('log_errors', '1');
 define('OCMS_VERSION', '2.0.0');
 define('OCMS_ROOT', __DIR__);
 
+// Sito non ancora installato: si va al wizard invece di mostrare un 404
+if (!is_file(OCMS_ROOT . '/data/config.json') && is_file(OCMS_ROOT . '/install.php')) {
+    $base = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'] ?? '/')), '/');
+    header('Location: ' . $base . '/install.php', true, 302);
+    exit;
+}
+
 require_once OCMS_ROOT . '/core/App.php';
 
 $app = App::getInstance();
