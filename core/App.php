@@ -705,8 +705,8 @@ HTML;
                 return;
             }
 
-            // Se c'è un codice di accesso, richiedilo (lo staff autenticato lo salta)
-            if ($hasAccessCode && !$app->auth->check()) {
+            // Se c'è un codice di accesso, richiedilo (lo salta solo lo staff, non i semplici registrati)
+            if ($hasAccessCode && !$app->auth->hasRole('editor')) {
                 $verified = $_SESSION['quiz_code_ok'][$params['slug']] ?? false;
                 if (!$verified) {
                     $app->render('quiz-code', ['quiz' => $quiz]);
@@ -815,17 +815,15 @@ HTML;
                 return;
             }
 
-            // Stessi cancelli della pagina del quiz: codice d'accesso o login
+            // Stessi cancelli della pagina del quiz: codice d'accesso (lo salta solo lo staff) o login
             $hasAccessCode = !empty($quiz['settings']['access_code']);
-            if (!$app->auth->check()) {
-                if ($hasAccessCode && empty($_SESSION['quiz_code_ok'][$params['slug']])) {
-                    echo json_encode(['success' => false, 'error' => 'Codice di accesso mancante: ricarica la pagina e inseriscilo.']);
-                    return;
-                }
-                if (!$hasAccessCode && !empty($quiz['settings']['require_auth'])) {
-                    echo json_encode(['success' => false, 'error' => 'Devi effettuare il login.']);
-                    return;
-                }
+            if ($hasAccessCode && !$app->auth->hasRole('editor') && empty($_SESSION['quiz_code_ok'][$params['slug']])) {
+                echo json_encode(['success' => false, 'error' => 'Codice di accesso mancante: ricarica la pagina e inseriscilo.']);
+                return;
+            }
+            if (!$hasAccessCode && !empty($quiz['settings']['require_auth']) && !$app->auth->check()) {
+                echo json_encode(['success' => false, 'error' => 'Devi effettuare il login.']);
+                return;
             }
 
             $student = is_array($input['student'] ?? null) ? $input['student'] : [];
@@ -925,8 +923,13 @@ HTML;
             ocms_track_visit('/firma/' . $params['slug'], 'fogliofirme');
             $needCode = !empty($sheet['access_code']);
             $codeOk = !$needCode;
-            if ($needCode && isset($_GET['code']) && hash_equals((string)$sheet['access_code'], (string)$_GET['code'])) {
-                $codeOk = true;
+            $rlKey = 'firmacode_' . $sheet['slug'];
+            if ($needCode && isset($_GET['code']) && !ocms_rate_limited_ip($rlKey, 300, 900)) {
+                if (hash_equals((string)$sheet['access_code'], (string)$_GET['code'])) {
+                    $codeOk = true;
+                } else {
+                    ocms_rate_limit_ip($rlKey, 300, 900);
+                }
             }
             $app->render('firma/form', ['sheet' => $sheet, 'needCode' => $needCode, 'codeOk' => $codeOk]);
         });
@@ -951,10 +954,20 @@ HTML;
                 ocms_flash_set('error', 'Compilazione troppo rapida, riprova.');
                 ocms_redirect(ocms_base_url() . '/firma/' . $sheet['slug']);
             }
-            // Codice accesso
+            // Codice accesso: errori limitati per sessione (10) e per IP (300 in 15 minuti,
+            // largo perché tutta la sala firma dallo stesso Wi-Fi), controllati prima del confronto
             if (!empty($sheet['access_code'])) {
+                $rlKey = 'firmacode_' . $sheet['slug'];
+                $sessFails = array_filter($_SESSION['_firmacode_fail'][$sheet['slug']] ?? [], fn($ts) => $ts > time() - 900);
+                if (count($sessFails) >= 10 || ocms_rate_limited_ip($rlKey, 300, 900)) {
+                    ocms_flash_set('error', 'Troppi tentativi con il codice sbagliato. Riprova tra qualche minuto.');
+                    ocms_redirect(ocms_base_url() . '/firma/' . $sheet['slug']);
+                }
                 $submitted = trim((string)($_POST['access_code'] ?? ''));
                 if (!hash_equals((string)$sheet['access_code'], $submitted)) {
+                    $sessFails[] = time();
+                    $_SESSION['_firmacode_fail'][$sheet['slug']] = array_values($sessFails);
+                    ocms_rate_limit_ip($rlKey, 300, 900);
                     ocms_flash_set('error', 'Codice di accesso errato.');
                     ocms_redirect(ocms_base_url() . '/firma/' . $sheet['slug']);
                 }

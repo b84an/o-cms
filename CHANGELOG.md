@@ -2,6 +2,12 @@
 
 All notable changes to O-CMS will be documented in this file.
 
+## [2.0.1] - 2026-11-12
+
+### Sicurezza
+- FoglioFirme: tentativi con il codice d'accesso sbagliato limitati per sessione e per IP.
+- Quiz con codice d'accesso: lo salta solo lo staff (editor o superiore), non più qualsiasi utente registrato.
+
 ## [2.0.0] - 2026-11-12
 
 Base: il codice in produzione su ivanbertotto.it (il più aggiornato), più il guscio di distribuzione del repo.
