@@ -165,6 +165,13 @@ button, input, select, textarea { font: inherit; color: inherit; }
     color: var(--ocms-text);
 }
 .btn-ghost:hover, .btn-secondary:hover, .btn-outline:hover { border-color: color-mix(in srgb, var(--ocms-accent) 55%, transparent); color: var(--ocms-text); background: var(--ocms-surface-strong); }
+/* Pulsanti scritti dentro un contenuto (articoli, pagine): non devono prendere lo stile dei link */
+:is(.prose, .mod-content .content) a.btn,
+:is(.prose, .mod-content .content) a:is(.btn-primary, .btn-secondary, .btn-ghost, .btn-outline) { text-decoration: none; margin: 0 6px 8px 0; }
+:is(.prose, .mod-content .content) a.btn-primary,
+:is(.prose, .mod-content .content) a.btn-primary:hover { color: #fff; }
+:is(.prose, .mod-content .content) a:is(.btn-secondary, .btn-ghost, .btn-outline),
+:is(.prose, .mod-content .content) a:is(.btn-secondary, .btn-ghost, .btn-outline):hover { color: var(--ocms-text); }
 .btn-sm { min-height: 36px; padding: 6px 14px; font-size: 0.9rem; }
 .btn-block { width: 100%; }
 .btn:disabled { opacity: 0.55; cursor: not-allowed; transform: none; }
@@ -554,6 +561,9 @@ input[type="search"]::-webkit-search-cancel-button { filter: grayscale(1); opaci
 /* ── 7. Testate, filtri, paginazione ── */
 .page-head { padding: 52px 0 28px; }
 .page-head-narrow { max-width: 780px; }
+/* Pagine statiche: testo largo quanto la testata, righe leggibili (~75 caratteri) */
+.static-page .prose-page,
+.static-page .page-foot { max-width: 780px; margin-inline: auto; }
 .page-head-count { margin-top: 10px; color: var(--ocms-text-muted); }
 .page-head .tag-list { margin-top: 18px; }
 .crumbs { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; color: var(--ocms-text-muted); font-size: 0.92rem; }

@@ -2,6 +2,12 @@
 
 All notable changes to O-CMS will be documented in this file.
 
+## [2.0.2] - 2026-11-12
+
+### Correzioni
+- Revisioni: pulsante "Confronta" verso la vista del confronto; l'anteprima di una revisione gira in un iframe isolato (gli script contenuti non vengono eseguiti nell'admin).
+- Tema flavor: i pulsanti `.btn` scritti dentro articoli e pagine non prendono più lo stile dei link; le pagine statiche hanno righe di lunghezza leggibile, allineate al titolo.
+
 ## [2.0.1] - 2026-11-12
 
 ### Sicurezza
