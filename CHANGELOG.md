@@ -2,6 +2,11 @@
 
 All notable changes to O-CMS will be documented in this file.
 
+## [2.0.6] - 2026-11-12
+
+### Novità
+- Tema flavor: le pagine esterne al CMS che usano header e footer del tema (mini-app nelle sottocartelle del sito) possono aggiungere i propri fogli di stile e script con `$flavor['styles']` e `$flavor['scripts']`.
+
 ## [2.0.5] - 2026-11-12
 
 Nuova verifica completa di sicurezza e bug (core, admin, tema, installer).
