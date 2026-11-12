@@ -9,7 +9,7 @@ $_ocmsDebug = is_file(__DIR__ . '/data/.debug') || is_file(dirname(__DIR__) . '/
 ini_set('display_errors', $_ocmsDebug ? '1' : '0');
 ini_set('log_errors', '1');
 
-define('OCMS_VERSION', '2.0.6');
+define('OCMS_VERSION', '2.0.7');
 define('OCMS_ROOT', dirname(__DIR__));
 
 require_once OCMS_ROOT . '/core/App.php';

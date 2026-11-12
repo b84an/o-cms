@@ -2,6 +2,13 @@
 
 All notable changes to O-CMS will be documented in this file.
 
+## [2.0.7] - 2026-11-12
+
+### Sicurezza
+- Installazione temi da ZIP: il nome del tema (preso dal pacchetto) deve essere uno slug semplice (lettere, numeri, `-`, `_`). Prima una cartella chiamata `..` faceva finire i file nella radice del CMS invece che in `themes/`.
+- Eliminazione media: il file viene cancellato solo se il percorso risolto con `realpath()` sta dentro `uploads/`.
+- API `/api/{resource}` (ora solo `tags` e `menus`): stessa autenticazione delle altre API, quindi funziona anche con il Bearer token e risponde in JSON. Tolto `users` dalle risorse ammesse: l'elenco utenti passa solo dalla rotta dedicata, che nasconde password e token.
+
 ## [2.0.6] - 2026-11-12
 
 ### Novità

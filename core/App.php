@@ -2310,8 +2310,13 @@ HTML;
 
             $media = $app->storage->find('media', $params['id']);
             if ($media) {
-                $filePath = ocms_base_path() . $media['url'];
-                if (file_exists($filePath)) unlink($filePath);
+                // Si cancella solo un file che sta davvero dentro uploads/
+                $uploadsDir = realpath(ocms_base_path() . '/uploads');
+                $filePath = realpath(ocms_base_path() . '/' . ltrim((string)($media['url'] ?? ''), '/'));
+                if ($uploadsDir && $filePath && is_file($filePath)
+                    && str_starts_with($filePath, $uploadsDir . DIRECTORY_SEPARATOR)) {
+                    unlink($filePath);
+                }
                 $app->storage->delete('media', $params['id']);
             }
             echo json_encode(['success' => true]);
@@ -4910,8 +4915,15 @@ HTML;
                 ocms_flash_set('error', 'Impossibile determinare il nome del tema dal ZIP');
                 ocms_redirect(ocms_base_url() . '/admin/themes');
             }
+            // Il nome del tema diventa una cartella: solo slug semplici
+            // (con "..", "." o simili i file finirebbero fuori da themes/)
+            if (!preg_match('/^[a-z0-9][a-z0-9_-]{0,63}$/i', $themeId)) {
+                $zip->close();
+                ocms_flash_set('error', 'Nome del tema non valido: usa solo lettere, numeri, "-" e "_"');
+                ocms_redirect(ocms_base_url() . '/admin/themes');
+            }
 
-            $destDir = ocms_base_path() . '/themes/' . basename($themeId);
+            $destDir = ocms_base_path() . '/themes/' . $themeId;
             if (!is_dir($destDir)) mkdir($destDir, 0755, true);
 
             for ($i = 0; $i < $zip->numFiles; $i++) {
@@ -5122,9 +5134,13 @@ HTML;
         // ─── API ───
 
         // API: lista risorse generica (usata via AJAX)
+        // Le risorse con una rotta dedicata (pages, articles, users...) sono gestite sopra:
+        // qui arrivano solo quelle senza. Stessa autenticazione delle altre API
+        // (sessione + CSRF oppure Bearer token). Mai "users": esporrebbe hash e token.
         $this->router->get('/api/{resource}', function ($params) use ($app) {
-            $app->auth->requireRole('editor');
-            $allowed = ['pages', 'articles', 'categories', 'tags', 'menus', 'users'];
+            $user = $this->apiAuth($app);
+            $this->apiRequireRole($user, 'editor');
+            $allowed = ['tags', 'menus'];
             $resource = $params['resource'];
             if (!in_array($resource, $allowed, true)) {
                 http_response_code(404);
