@@ -22,8 +22,10 @@ set_time_limit(120);
 error_reporting(E_ALL);
 ini_set('display_errors', '0');
 
-// Già installato? Blocca l'accesso.
-if (file_exists(__DIR__ . '/data/.installed')) {
+// Già installato? Blocca l'accesso. Vale anche per i siti 1.x senza il file .installed:
+// basta che esista già una configurazione, altrimenti chiunque potrebbe reinstallare
+// sopra un sito vivo e diventarne amministratore.
+if (file_exists(__DIR__ . '/data/.installed') || file_exists(__DIR__ . '/data/config.json')) {
     // Gestisci richiesta di auto-eliminazione
     if (isset($_GET['self-delete']) && $_GET['self-delete'] === 'confirm') {
         $siteUrl = '';
@@ -37,6 +39,7 @@ if (file_exists(__DIR__ . '/data/.installed')) {
         header('Location: ' . $redirect);
         exit;
     }
+    http_response_code(403);
     die('O-CMS è già installato. Per sicurezza, elimina install.php dal server.');
 }
 
@@ -137,6 +140,11 @@ function e(string $s): string {
     return htmlspecialchars($s, ENT_QUOTES, 'UTF-8');
 }
 
+/** Valore testuale dal POST (un array al posto di una stringa non deve mandare in errore la pagina) */
+function post_str(string $key, string $default = ''): string {
+    return is_string($_POST[$key] ?? null) ? $_POST[$key] : $default;
+}
+
 // ─── GESTIONE PASSAGGI ───
 
 $step = (int)($_POST['_step'] ?? $_GET['step'] ?? 1);
@@ -147,21 +155,24 @@ $data = $_SESSION['_install_data'] ?? [];
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && install_csrf_verify()) {
     switch ($step) {
         case 2: // Configurazione sito inviata
-            $data['site_name']   = trim($_POST['site_name'] ?? 'Il mio sito');
-            $data['site_url']    = rtrim(trim($_POST['site_url'] ?? ''), '/');
+            $data['site_name']   = trim(post_str('site_name', 'Il mio sito'));
+            $data['site_url']    = rtrim(trim(post_str('site_url')), '/');
             $data['language']    = 'it';
-            $data['timezone']    = $_POST['timezone'] ?? 'Europe/Rome';
-            $data['date_format'] = $_POST['date_format'] ?? 'd/m/Y';
+            $data['timezone']    = in_array(post_str('timezone'), timezone_identifiers_list(), true) ? post_str('timezone') : 'Europe/Rome';
+            $data['date_format'] = in_array(post_str('date_format'), ['d/m/Y', 'm/d/Y', 'Y-m-d', 'd.m.Y', 'j F Y'], true) ? post_str('date_format') : 'd/m/Y';
             if (empty($data['site_name'])) $errors[] = 'Il nome del sito è obbligatorio.';
+            if ($data['site_url'] !== '' && !preg_match('#^(/[A-Za-z0-9._~-]+)+$#', $data['site_url'])) {
+                $errors[] = 'URL del sito non valido: scrivi un percorso come /blog, oppure lascialo vuoto se il sito sta nella radice del dominio.';
+            }
             if (empty($errors)) { $_SESSION['_install_data'] = $data; $step = 3; }
             break;
 
         case 3: // Account admin inviato
-            $data['admin_user']    = trim($_POST['admin_user'] ?? '');
-            $data['admin_email']   = trim($_POST['admin_email'] ?? '');
-            $data['admin_pass']    = $_POST['admin_pass'] ?? '';
-            $data['admin_pass2']   = $_POST['admin_pass2'] ?? '';
-            $data['admin_display'] = trim($_POST['admin_display'] ?? '') ?: $data['admin_user'];
+            $data['admin_user']    = trim(post_str('admin_user'));
+            $data['admin_email']   = trim(post_str('admin_email'));
+            $data['admin_pass']    = post_str('admin_pass');
+            $data['admin_pass2']   = post_str('admin_pass2');
+            $data['admin_display'] = trim(post_str('admin_display')) ?: $data['admin_user'];
             if (empty($data['admin_user']) || !preg_match('/^[a-z0-9_-]{3,30}$/', $data['admin_user'])) {
                 $errors[] = 'Lo username deve essere di 3-30 caratteri: solo lettere minuscole, numeri, - e _.';
             }
@@ -178,15 +189,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && install_csrf_verify()) {
             break;
 
         case 4: // SMTP inviato
-            $data['smtp_method'] = $_POST['smtp_method'] ?? 'php_mail';
+            $data['smtp_method'] = post_str('smtp_method') === 'smtp' ? 'smtp' : 'php_mail';
             if ($data['smtp_method'] === 'smtp') {
-                $data['smtp_host']       = trim($_POST['smtp_host'] ?? '');
-                $data['smtp_port']       = (int)($_POST['smtp_port'] ?? 587);
-                $data['smtp_encryption'] = $_POST['smtp_encryption'] ?? 'tls';
-                $data['smtp_username']   = trim($_POST['smtp_username'] ?? '');
-                $data['smtp_password']   = $_POST['smtp_password'] ?? '';
-                $data['smtp_from_email'] = trim($_POST['smtp_from_email'] ?? '') ?: $data['admin_email'];
-                $data['smtp_from_name']  = trim($_POST['smtp_from_name'] ?? '') ?: $data['site_name'];
+                $data['smtp_host']       = trim(post_str('smtp_host'));
+                $data['smtp_port']       = (int)post_str('smtp_port', '587');
+                $data['smtp_encryption'] = in_array(post_str('smtp_encryption'), ['tls', 'ssl', 'none'], true) ? post_str('smtp_encryption') : 'tls';
+                $data['smtp_username']   = trim(post_str('smtp_username'));
+                $data['smtp_password']   = post_str('smtp_password');
+                $data['smtp_from_email'] = trim(post_str('smtp_from_email')) ?: ($data['admin_email'] ?? '');
+                $data['smtp_from_name']  = trim(post_str('smtp_from_name')) ?: ($data['site_name'] ?? '');
             }
             $_SESSION['_install_data'] = $data;
             $step = 5;
@@ -198,6 +209,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && install_csrf_verify()) {
             break;
 
         case 6: // Riepilogo confermato → avvia installazione
+            // Solo con tutti i dati: se la sessione è scaduta a metà, prima l'installer
+            // creava comunque un amministratore "admin" con password "changeme"
+            if (empty($data['site_name']) || empty($data['admin_user']) || !preg_match('/^[a-z0-9_-]{3,30}$/', (string)$data['admin_user'])
+                || strlen((string)($data['admin_pass'] ?? '')) < 8 || empty($data['admin_email'])) {
+                $errors[] = 'Mancano alcuni dati (forse la sessione è scaduta): ricontrolla i passaggi.';
+                $step = empty($data['site_name']) ? 2 : 3;
+                break;
+            }
             $step = 7;
             break;
     }
@@ -282,7 +301,7 @@ if ($step === 7) {
             'instructions' => '',
         ],
         'installation_notified' => false,
-        'ocms_version'          => '2.0.0',
+        'ocms_version'          => '2.0.5',
     ];
     if (file_put_contents($baseDir . '/data/config.json', json_encode($config, $jsonFlags)) === false) {
         $installWarnings[] = 'Impossibile scrivere config.json';

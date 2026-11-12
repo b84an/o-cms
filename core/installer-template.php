@@ -12,11 +12,31 @@
  */
 
 // Impedisci timeout su server lenti
-set_time_limit(300);
+@set_time_limit(300);
 error_reporting(E_ALL);
-ini_set('display_errors', '1');
+ini_set('display_errors', '0');
 
-$step = $_GET['step'] ?? ($_POST['step'] ?? 'check');
+// ─── BLOCCO DI SICUREZZA ───
+// L'installer funziona UNA volta sola, su una cartella senza sito: se trova già un sito
+// (o un'installazione completata) si rifiuta. Prima chiunque poteva rieseguirlo dopo il
+// ripristino e crearsi un super amministratore.
+$installerDir = __DIR__;
+if (is_file($installerDir . '/data/.installed') || is_file($installerDir . '/data/config.json')) {
+    http_response_code(403);
+    header('Content-Type: text/plain; charset=UTF-8');
+    echo "In questa cartella c'è già un sito O-CMS: l'installer è disattivato.\n"
+       . "Per sicurezza cancella installer.php e l'eventuale file ZIP del backup dal server.\n";
+    exit;
+}
+
+session_start();
+if (empty($_SESSION['_restore_csrf'])) {
+    $_SESSION['_restore_csrf'] = bin2hex(random_bytes(32));
+}
+$csrfToken = $_SESSION['_restore_csrf'];
+
+$step = (string)($_GET['step'] ?? ($_POST['step'] ?? 'check'));
+if (!in_array($step, ['check', 'config', 'install', 'done'], true)) $step = 'check';
 $errors = [];
 $warnings = [];
 
@@ -116,7 +136,8 @@ function extractBackup(string $zipFile, string $destDir): bool {
         }
 
         if (!$relativePath || str_ends_with($name, '/')) continue;
-        if (str_contains($relativePath, '..')) continue; // sicurezza
+        // sicurezza: niente percorsi assoluti, risalite o backslash (zip slip)
+        if (str_contains($relativePath, '..') || str_contains($relativePath, '\\') || $relativePath[0] === '/') continue;
 
         $targetPath = $destDir . '/' . $relativePath;
         $targetDir = dirname($targetPath);
@@ -171,8 +192,23 @@ function createAdmin(string $destDir, string $username, string $password, string
 
 // ─── PROCESSA INSTALLAZIONE ───
 
-if ($step === 'install' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+if ($step === 'install' && ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
     $destDir = dirname(__FILE__);
+    $str = fn(string $k): string => is_string($_POST[$k] ?? null) ? trim($_POST[$k]) : '';
+    if (!hash_equals($csrfToken, $str('_csrf'))) {
+        $errors[] = 'Sessione scaduta o richiesta non valida: ricarica la pagina e riprova.';
+    }
+    $newUser = $str('admin_username');
+    $newPass = is_string($_POST['admin_password'] ?? null) ? $_POST['admin_password'] : '';
+    if ($newUser !== '' || $newPass !== '') {
+        if (!preg_match('/^[a-z0-9_-]{3,30}$/', $newUser)) $errors[] = 'Username non valido: 3-30 caratteri tra lettere minuscole, numeri, - e _.';
+        if (strlen($newPass) < 8) $errors[] = 'La password del nuovo amministratore deve avere almeno 8 caratteri.';
+    }
+    $siteUrlIn = rtrim($str('site_url'), '/');
+    if ($siteUrlIn !== '' && !preg_match('#^(/[A-Za-z0-9._~-]+)+$#', $siteUrlIn)) {
+        $errors[] = 'URL base non valido: usa un percorso come /cms oppure lascialo vuoto.';
+    }
+  if (empty($errors)) {
     $zipFile = $destDir . '/installer.php'; // placeholder — il file ZIP è nella stessa cartella
 
     // Cerca il file ZIP del backup nella stessa cartella
@@ -201,20 +237,20 @@ if ($step === 'install' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         // Aggiorna config
         if (empty($errors)) {
             $updated = updateConfig($destDir, [
-                'site_name' => trim($_POST['site_name'] ?? 'O-CMS'),
-                'site_url' => trim($_POST['site_url'] ?? ''),
-                'admin_email' => trim($_POST['admin_email'] ?? ''),
+                'site_name' => $str('site_name') !== '' ? $str('site_name') : 'O-CMS',
+                'site_url' => $siteUrlIn,
+                'admin_email' => filter_var($str('admin_email'), FILTER_VALIDATE_EMAIL) ? $str('admin_email') : '',
             ]);
             if (!$updated) $warnings[] = 'Impossibile aggiornare config.json — modifica manualmente.';
         }
 
         // Crea nuovo admin se richiesto
-        if (empty($errors) && !empty($_POST['admin_username']) && !empty($_POST['admin_password'])) {
+        if (empty($errors) && $newUser !== '' && $newPass !== '') {
             $created = createAdmin(
                 $destDir,
-                trim($_POST['admin_username']),
-                $_POST['admin_password'],
-                trim($_POST['admin_email'] ?? '')
+                $newUser,
+                $newPass,
+                filter_var($str('admin_email'), FILTER_VALIDATE_EMAIL) ? $str('admin_email') : ''
             );
             if (!$created) $warnings[] = 'Impossibile creare l\'utente admin.';
         }
@@ -223,14 +259,24 @@ if ($step === 'install' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         if (empty($errors)) {
             $dataHtaccess = $destDir . '/data/.htaccess';
             if (!file_exists($dataHtaccess)) {
-                file_put_contents($dataHtaccess, "Deny from all\n");
+                file_put_contents($dataHtaccess, "<IfModule mod_authz_core.c>\n    Require all denied\n</IfModule>\n<IfModule !mod_authz_core.c>\n    Deny from all\n</IfModule>\n");
             }
+            // Blocco: da qui in poi l'installer non riparte più
+            @file_put_contents($destDir . '/data/.installed', date('c'));
+            // Il backup contiene utenti, password SMTP e chiavi: non deve restare scaricabile
+            if ($zipFile && @unlink($zipFile)) {
+                $warnings[] = 'Il file ZIP del backup è stato cancellato dal server.';
+            } else {
+                $warnings[] = 'Cancella SUBITO il file ZIP del backup dalla cartella del sito: contiene dati riservati.';
+            }
+            $doneSiteUrl = $siteUrlIn;
+            $selfDeleted = @unlink(__FILE__);
         }
     }
+  }
 
-    if (empty($errors)) {
-        $step = 'done';
-    }
+    // con errori si torna al modulo (prima la pagina restava vuota)
+    $step = empty($errors) ? 'done' : 'config';
 }
 
 // ─── INTERFACCIA HTML ───
@@ -346,6 +392,7 @@ $allRequired = !in_array(false, array_map(fn($c) => !$c['required'] || $c['statu
     <!-- STEP 2: Configurazione -->
     <form method="POST" action="?step=install">
         <input type="hidden" name="step" value="install">
+        <input type="hidden" name="_csrf" value="<?= htmlspecialchars($csrfToken) ?>">
 
         <div class="card">
             <h2>Configurazione Sito</h2>
@@ -375,13 +422,13 @@ $allRequired = !in_array(false, array_map(fn($c) => !$c['required'] || $c['statu
 
             <div class="form-group">
                 <label>Username</label>
-                <input type="text" name="admin_username" class="form-input" placeholder="admin" pattern="[a-z0-9_-]+">
+                <input type="text" name="admin_username" class="form-input" placeholder="admin" pattern="[a-z0-9_-]{3,30}">
                 <div class="form-hint">Solo lettere minuscole, numeri, - e _</div>
             </div>
 
             <div class="form-group">
                 <label>Password</label>
-                <input type="password" name="admin_password" class="form-input" placeholder="Minimo 4 caratteri" minlength="4">
+                <input type="password" name="admin_password" class="form-input" placeholder="Minimo 8 caratteri" minlength="8">
             </div>
         </div>
 
@@ -397,26 +444,24 @@ $allRequired = !in_array(false, array_map(fn($c) => !$c['required'] || $c['statu
         <div class="success-icon">&#127881;</div>
         <h2 style="text-align:center;">Installazione Completata!</h2>
         <p style="color:var(--text-muted);margin-bottom:24px;">
-            O-CMS è stato installato con successo. Per sicurezza, <strong>elimina subito questo file</strong> e il file ZIP del backup.
+            O-CMS è stato ripristinato. L'installer si è bloccato da solo e non può essere rieseguito.
         </p>
 
         <div class="alert alert-warning" style="text-align:left;">
-            <strong>Azioni importanti:</strong><br>
-            1. Elimina <code>installer.php</code> dalla cartella del sito<br>
-            2. Elimina il file ZIP del backup dalla cartella<br>
-            3. Verifica che <code>data/.htaccess</code> contenga "Deny from all"<br>
-            4. Cambia la password dell'admin dal pannello
+            <strong>Controlla:</strong><br>
+            <?php if (empty($selfDeleted)): ?>&bull; Cancella <code>installer.php</code> dalla cartella del sito (non è stato possibile farlo in automatico).<br><?php endif; ?>
+            &bull; Entra nell'admin e cambia la password se il backup veniva da un altro server.
         </div>
 
         <div style="display:flex;gap:12px;justify-content:center;margin-top:20px;">
-            <a href="<?= htmlspecialchars(rtrim($_POST['site_url'] ?? '', '/')) ?>/" class="btn btn-secondary" style="text-decoration:none;">Vai al Sito</a>
-            <a href="<?= htmlspecialchars(rtrim($_POST['site_url'] ?? '', '/')) ?>/admin/" class="btn btn-primary" style="text-decoration:none;">Vai all'Admin</a>
+            <a href="<?= htmlspecialchars($doneSiteUrl ?? '') ?>/" class="btn btn-secondary" style="text-decoration:none;">Vai al Sito</a>
+            <a href="<?= htmlspecialchars($doneSiteUrl ?? '') ?>/admin/" class="btn btn-primary" style="text-decoration:none;">Vai all'Admin</a>
         </div>
     </div>
     <?php endif; ?>
 
     <p style="text-align:center;color:var(--text-muted);font-size:0.75rem;margin-top:20px;">
-        O-CMS Installer v1.0 &mdash; Powered by O-CMS
+        O-CMS Installer 2 &mdash; ripristino da backup
     </p>
 </div>
 </body>
