@@ -64,6 +64,7 @@ ob_start();
                 </div>
 
                 <div style="display:flex;gap:8px;flex-shrink:0;">
+                    <a class="btn btn-secondary btn-sm" href="<?= ocms_base_url() ?>/admin/articles/revisions/<?= ocms_escape($article['slug']) ?>/diff/<?= ocms_escape($rev['_rev_file']) ?>">Confronta</a>
                     <button class="btn btn-secondary btn-sm" onclick="togglePreview('rev-<?= $i ?>')">Anteprima</button>
                     <form method="POST" action="<?= ocms_base_url() ?>/admin/articles/revisions/restore/<?= ocms_escape($article['slug']) ?>/<?= ocms_escape($rev['_rev_file']) ?>"
                           onsubmit="return confirm('Ripristinare questa versione? La versione corrente verrà salvata come revisione.')">
@@ -75,9 +76,10 @@ ob_start();
 
             <!-- Preview contenuto (nascosta) -->
             <div id="rev-<?= $i ?>" style="display:none;margin-top:16px;padding-top:16px;border-top:1px solid var(--border);">
-                <div style="background:var(--bg);border-radius:8px;padding:16px;font-size:0.85rem;max-height:300px;overflow-y:auto;line-height:1.7;">
-                    <?= $rev['content'] ?>
-                </div>
+                <?php // anteprima isolata: gli script eventualmente presenti nella revisione non girano nell'admin ?>
+                <iframe sandbox="" title="Anteprima della revisione" loading="lazy"
+                        style="width:100%;height:320px;border:1px solid var(--border);border-radius:8px;background:#fff;"
+                        srcdoc="<?= htmlspecialchars('<!DOCTYPE html><meta charset="utf-8"><style>body{font:15px/1.7 system-ui,sans-serif;margin:16px;color:#0f1e3d}img,svg{max-width:100%;height:auto}</style>' . (string)($rev['content'] ?? ''), ENT_QUOTES, 'UTF-8') ?>"></iframe>
             </div>
         </div>
         <?php endforeach; ?>
