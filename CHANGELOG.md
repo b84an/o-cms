@@ -2,6 +2,26 @@
 
 All notable changes to O-CMS will be documented in this file.
 
+## [2.0.5] - 2026-11-12
+
+Nuova verifica completa di sicurezza e bug (core, admin, tema, installer).
+
+### Sicurezza
+- Gallerie e lezioni: uno slug d'origine o un parametro con `../` o `..` non può più spostare o cancellare cartelle fuori posto (prima un editor poteva rendere pubblica `data/` o cancellare `uploads/`). Il router rifiuta i parametri `.` e `..`.
+- Installer dei backup (`installer.php`): non si può più rieseguire dopo il ripristino (prima permetteva a chiunque di creare un super amministratore), CSRF, username validato, lo ZIP del backup viene cancellato.
+- `install.php`: bloccato anche sui siti 1.x senza `data/.installed`; con la sessione scaduta non crea più l'utente admin/changeme; campi validati.
+- XSS chiuse: galleria degli articoli via API, shortcode `[gallery:...]` (anche la lightbox ora funziona), suggerimenti della ricerca admin, finestra di eliminazione categoria, risposta del test IA, tag delle sezioni di layout.
+- API: campi validati per tipo (un solo articolo con `tags` scritto male mandava in errore tutto il blog).
+- Sessione: cookie proprio per ogni installazione e limitato al suo percorso (una sandbox sullo stesso dominio non condivide più il login). Dopo l'aggiornamento serve rientrare una volta.
+- Limiti di lunghezza su firme, commenti e form; limiti per IP su commenti, form e registrazione; statistiche con un tetto ai referrer; `check-email` dei quiz protetto come l'invio; logout solo con POST; chiave IA solo su TLS verificato; redirect solo verso pagine del sito.
+
+### Correzioni
+- Salvare dall'admin un articolo o una pagina non distrugge più iframe, script, form e tag semantici: gli amministratori salvano HTML libero (come già con le API), l'editor lavora in un iframe isolato. La pagina contatto si può di nuovo salvare.
+- Salvare un form non gli cambia più lo slug (gli shortcode `[form:...]` restano validi); le opzioni di select/radio/checkbox si salvano una per riga.
+- Rinominare quiz, gallerie e menu non sovrascrive più un altro elemento; i risultati seguono il quiz rinominato.
+- Quiz: le impostazioni dei quiz vecchi non vengono azzerate al salvataggio; l'intestazione del CSV non diventa una domanda; virgolette nei testi importati conservate; sui PC condivisi il quiz salvato dice di chi è.
+- FoglioFirme: codice senza distinzione tra maiuscole e minuscole; dopo un errore il modulo resta compilato; la proiezione mostra "chiusa" dopo la chiusura automatica.
+
 ## [2.0.4] - 2026-11-12
 
 ### Novità

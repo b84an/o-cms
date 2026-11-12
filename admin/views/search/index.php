@@ -228,7 +228,14 @@ document.addEventListener('DOMContentLoaded', function() {
                 const res = await fetch(BASE + '/admin/search/suggest?q=' + encodeURIComponent(q));
                 const data = await res.json();
                 if (data.length) {
-                    box.innerHTML = data.map(s => '<div class="search-suggest-item" data-q="'+s.replace(/"/g,'&quot;')+'">'+s+'</div>').join('');
+                    // suggerimenti costruiti col DOM: titoli e nomi non sono mai HTML
+                    box.replaceChildren(...data.map(s => {
+                        const d = document.createElement('div');
+                        d.className = 'search-suggest-item';
+                        d.dataset.q = String(s);
+                        d.textContent = String(s);
+                        return d;
+                    }));
                     box.classList.add('open');
                     box.querySelectorAll('.search-suggest-item').forEach(el => {
                         el.addEventListener('mousedown', e => {

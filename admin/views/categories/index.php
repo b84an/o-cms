@@ -138,15 +138,17 @@ document.querySelectorAll('.btn-delete-cat').forEach(btn => {
             body.innerHTML = '<p style="color:var(--text-muted);">Questa categoria e vuota. Vuoi eliminarla?</p>';
             document.getElementById('modal-move-to').value = '';
         } else {
-            let options = '<option value="">— Rimuovi categoria dagli articoli —</option>';
-            allCats.forEach(c => {
-                if (c.slug !== slug) options += '<option value="' + c.slug + '">' + c.name + '</option>';
-            });
             body.innerHTML = '<div style="padding:12px 16px;background:rgba(245,158,11,0.1);border:1px solid rgba(245,158,11,0.2);border-radius:8px;margin-bottom:16px;">'
-                + '<strong style="color:#f59e0b;">Attenzione:</strong> questa categoria contiene <strong>' + count + ' articoli</strong>.</div>'
-                + '<p style="color:var(--text-muted);margin-bottom:12px;">Cosa fare con gli articoli?</p>'
-                + '<select class="form-input" onchange="document.getElementById(\'modal-move-to\').value=this.value" style="width:100%;">'
-                + options + '</select>';
+                + '<strong style="color:#f59e0b;">Attenzione:</strong> questa categoria contiene <strong>' + Number(count) + ' articoli</strong>.</div>'
+                + '<p style="color:var(--text-muted);margin-bottom:12px;">Cosa fare con gli articoli?</p>';
+            // le opzioni nascono dal DOM: nomi e slug delle categorie non sono mai HTML
+            const sel = document.createElement('select');
+            sel.className = 'form-input';
+            sel.style.width = '100%';
+            sel.add(new Option('— Rimuovi categoria dagli articoli —', ''));
+            allCats.forEach(c => { if (c.slug !== slug) sel.add(new Option(String(c.name), String(c.slug))); });
+            sel.addEventListener('change', () => { document.getElementById('modal-move-to').value = sel.value; });
+            body.appendChild(sel);
             document.getElementById('modal-move-to').value = '';
         }
 

@@ -232,7 +232,7 @@ ob_start();
                 <div class="form-group mb-0">
                     <label for="page-order">Ordine</label>
                     <input type="number" name="order" id="page-order" class="form-input"
-                           value="<?= (int)$page['order'] ?>" min="0">
+                           value="<?= (int)($page['order'] ?? 0) ?>" min="0">
                 </div>
                 <div class="form-group mt-12 mb-0">
                     <label for="page-parent">Pagina Padre</label>
@@ -249,10 +249,28 @@ ob_start();
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jodit/4.6.13/es2015/jodit.min.js"></script>
 <script>
+// Stile del documento dentro l'editor, coerente con il tema chiaro/scuro dell'admin
+function ocmsEditorStyle() {
+    var light = (window.OCMSTheme && OCMSTheme.current() === 'light');
+    var bg = light ? '#ffffff' : '#0f1d3a', fg = light ? '#0f1e3d' : '#e6eeff', link = light ? '#1d4ed8' : '#67e8f9';
+    return 'html{background:' + bg + ';}body{margin:0;padding:20px;background:' + bg + ';color:' + fg + ';'
+        + "font:15px/1.7 'Atkinson Hyperlegible Next','Segoe UI',system-ui,sans-serif;}"
+        + 'a{color:' + link + ';}img,video,iframe,svg{max-width:100%;height:auto;}'
+        + 'pre,code{font-family:ui-monospace,Menlo,Consolas,monospace;background:rgba(127,127,127,.15);border-radius:6px;}'
+        + 'pre{padding:12px;overflow:auto;}table{border-collapse:collapse;}td,th{border:1px solid rgba(127,127,127,.4);padding:6px 10px;}';
+}
+</script>
+<script>
 document.addEventListener('DOMContentLoaded', function() {
     // ─── Jodit Editor ───
     const editor = Jodit.make('#editor', {
         height: 500,
+        // Il contenuto vive in un iframe isolato: i form e gli script degli articoli
+        // non finiscono dentro il form dell'admin (prima la pagina contatto non si
+        // salvava e i suoi form sparivano) e non vengono eseguiti nell'admin
+        iframe: true,
+        iframeSandbox: 'allow-same-origin',
+        iframeStyle: ocmsEditorStyle(),
         theme: 'dark',
         toolbarSticky: true,
         toolbarStickyOffset: 0,

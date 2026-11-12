@@ -462,6 +462,8 @@ function ocms_sanitize_html(string $html): string {
     $allowed = '<h1><h2><h3><h4><h5><h6><p><br><hr><div><span><a><strong><b><em><i><u><s><del>'
              . '<ul><ol><li><blockquote><pre><code><table><thead><tbody><tr><th><td>'
              . '<img><figure><figcaption><video><source><audio><sub><sup><mark><small>'
+             . '<section><article><header><footer><nav><aside><main><details><summary>'
+             . '<dl><dt><dd><abbr><cite><q><kbd><samp><var><time><caption><colgroup><col><tfoot><picture><track>'
              . '<style>';
 
     // Tag SVG permessi: solo forme, testo, gradienti e filtri.
@@ -505,13 +507,19 @@ function ocms_sanitize_html(string $html): string {
         return $m[1] . $css . $m[3];
     }, $html);
 
-    // Strip base URL dai path immagini (l'editor li aggiunge per la visualizzazione)
+    return ocms_strip_editor_base($html);
+}
+
+/**
+ * Toglie la base URL che l'editor aggiunge ai percorsi delle immagini per mostrarle
+ * (src="/s/uploads/..." torna src="/uploads/..."), così i dati restano uniformi.
+ */
+function ocms_strip_editor_base(string $html): string {
     $bu = ocms_base_url();
     if ($bu !== '' && $bu !== '/') {
         $html = str_replace('src="' . $bu . '/uploads/', 'src="/uploads/', $html);
         $html = str_replace('src="' . $bu . '/data/', 'src="/data/', $html);
     }
-
     return $html;
 }
 
@@ -569,6 +577,16 @@ function ocms_url_is_dangerous(string $url, bool $allowDataImage = false): bool 
         return !($allowDataImage && preg_match('#^data:image/(png|jpe?g|gif|webp|avif);base64,#', $u));
     }
     return false;
+}
+
+/**
+ * Contenuto HTML salvato dall'admin: gli amministratori possono scrivere HTML libero
+ * (iframe dei video, script delle infografiche, form come nella pagina contatto),
+ * come già con le API; editor e publisher passano dal sanitizer.
+ * Prima il sanitizer valeva per tutti e il salvataggio distruggeva quei contenuti.
+ */
+function ocms_content_for_role($app, string $html): string {
+    return $app->auth->hasRole('administrator') ? ocms_strip_editor_base($html) : ocms_sanitize_html($html);
 }
 
 /**
@@ -655,6 +673,15 @@ function ocms_clean_meta($meta): array {
         $out[$k] = is_scalar($meta[$k] ?? null) ? mb_substr(trim((string)$meta[$k]), 0, 500) : '';
     }
     return $out;
+}
+
+/**
+ * Confronto di un codice d'accesso scritto a mano: senza distinguere maiuscole
+ * e minuscole e ignorando gli spazi ai lati ("collegio26" vale "COLLEGIO26").
+ */
+function ocms_code_matches(string $expected, string $given): bool {
+    $norm = fn(string $s) => function_exists('mb_strtoupper') ? mb_strtoupper(trim($s)) : strtoupper(trim($s));
+    return $expected !== '' && hash_equals($norm($expected), $norm($given));
 }
 
 /**

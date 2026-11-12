@@ -1,6 +1,12 @@
 <?php
 $pageTitle = $quiz ? 'Modifica Quiz' : 'Nuovo Quiz';
 $activeMenu = 'quizzes';
+// Quiz vecchi con le impostazioni al primo livello del JSON: le si mostra (e quindi
+// le si salva) invece di azzerarle. Prima riaprire e salvare toglieva il limite di tempo.
+if ($quiz) {
+    $legacy = array_intersect_key($quiz, array_flip(['penalty_mode', 'randomize', 'time_limit', 'require_auth', 'active', 'access_code']));
+    $quiz['settings'] = (is_array($quiz['settings'] ?? null) ? $quiz['settings'] : []) + $legacy;
+}
 ob_start();
 ?>
 
@@ -197,11 +203,8 @@ ob_start();
         const div = document.createElement('div');
         div.className = 'quiz-question-block';
         div.dataset.index = i;
-        const esc = s => {
-            const t = document.createElement('span');
-            t.textContent = s;
-            return t.innerHTML;
-        };
+        // escape completo, virgolette comprese: il testo finisce dentro value="..."
+        const esc = s => String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
         div.innerHTML = `
             <div class="qq-header">
                 <span class="qq-number">#${i + 1}</span>
@@ -263,9 +266,9 @@ ob_start();
 
         for (let li = 0; li < lines.length; li++) {
             const parts = parseCSVLine(lines[li], bestDelim);
+            // la riga di intestazione si salta sempre, anche quando ha 5 colonne
+            if (li === 0 && parts.some(p => /^\s*(domanda|question|corretta|correct|errata|wrong)/i.test(p))) continue;
             if (parts.length !== 5) {
-                // skip header or malformed
-                if (li === 0 && parts.some(p => /domanda|question/i.test(p))) continue;
                 errors++;
                 continue;
             }

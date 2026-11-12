@@ -970,13 +970,15 @@ HTML;
             $codeOk = !$needCode;
             $rlKey = 'firmacode_' . $sheet['slug'];
             if ($needCode && isset($_GET['code']) && !ocms_rate_limited_ip($rlKey, 300, 900)) {
-                if (hash_equals((string)$sheet['access_code'], (string)$_GET['code'])) {
+                if (ocms_code_matches((string)$sheet['access_code'], (string)$_GET['code'])) {
                     $codeOk = true;
                 } else {
                     ocms_rate_limit_ip($rlKey, 300, 900);
                 }
             }
-            $app->render('firma/form', ['sheet' => $sheet, 'needCode' => $needCode, 'codeOk' => $codeOk]);
+            $old = $_SESSION['_firma_old'][$sheet['slug']] ?? [];
+            unset($_SESSION['_firma_old'][$sheet['slug']]);
+            $app->render('firma/form', ['sheet' => $sheet, 'needCode' => $needCode, 'codeOk' => $codeOk, 'old' => is_array($old) ? $old : []]);
         });
 
         $this->router->post('/firma/{slug}', function ($params) use ($app) {
@@ -985,9 +987,18 @@ HTML;
             if (($sheet['status'] ?? 'open') !== 'open' || ocms_fogliofirme_is_expired($sheet)) {
                 $app->render('firma/closed', ['sheet' => $sheet]); return;
             }
+            // Dopo un errore si torna al modulo con i dati già scritti e con il codice,
+            // invece di ripartire da zero (chi arrivava dal link col codice lo perdeva)
+            $__code = trim(ocms_post_str('access_code'));
+            $_SESSION['_firma_old'][$sheet['slug']] = [
+                'nome' => mb_substr(trim(ocms_post_str('nome')), 0, 100),
+                'cognome' => mb_substr(trim(ocms_post_str('cognome')), 0, 100),
+                'email' => mb_substr(trim(ocms_post_str('email')), 0, 200),
+            ];
+            $backUrl = ocms_base_url() . '/firma/' . $sheet['slug'] . ($__code !== '' ? '?code=' . rawurlencode(mb_substr($__code, 0, 64)) : '');
             if (!ocms_csrf_verify()) {
                 ocms_flash_set('error', 'Sessione scaduta, riprova.');
-                ocms_redirect(ocms_base_url() . '/firma/' . $sheet['slug']);
+                ocms_redirect($backUrl);
             }
             // Honeypot
             if (!empty($_POST['website'])) {
@@ -997,7 +1008,7 @@ HTML;
             $ts = (int)($_POST['_ts'] ?? 0);
             if ($ts > 0 && (time() - $ts) < 2) {
                 ocms_flash_set('error', 'Compilazione troppo rapida, riprova.');
-                ocms_redirect(ocms_base_url() . '/firma/' . $sheet['slug']);
+                ocms_redirect($backUrl);
             }
             // Codice accesso: errori limitati per sessione (10) e per IP (300 in 15 minuti,
             // largo perché tutta la sala firma dallo stesso Wi-Fi), controllati prima del confronto
@@ -1006,15 +1017,15 @@ HTML;
                 $sessFails = array_filter($_SESSION['_firmacode_fail'][$sheet['slug']] ?? [], fn($ts) => $ts > time() - 900);
                 if (count($sessFails) >= 10 || ocms_rate_limited_ip($rlKey, 300, 900)) {
                     ocms_flash_set('error', 'Troppi tentativi con il codice sbagliato. Riprova tra qualche minuto.');
-                    ocms_redirect(ocms_base_url() . '/firma/' . $sheet['slug']);
+                    ocms_redirect($backUrl);
                 }
                 $submitted = trim((string)($_POST['access_code'] ?? ''));
-                if (!hash_equals((string)$sheet['access_code'], $submitted)) {
+                if (!ocms_code_matches((string)$sheet['access_code'], $submitted)) {
                     $sessFails[] = time();
                     $_SESSION['_firmacode_fail'][$sheet['slug']] = array_values($sessFails);
                     ocms_rate_limit_ip($rlKey, 300, 900);
                     ocms_flash_set('error', 'Codice di accesso errato.');
-                    ocms_redirect(ocms_base_url() . '/firma/' . $sheet['slug']);
+                    ocms_redirect($backUrl);
                 }
             }
             $nome = trim(ocms_post_str('nome'));
@@ -1023,11 +1034,11 @@ HTML;
             // campi corti: prima una "firma" da 6 MB gonfiava il foglio fino a bloccarlo
             if (mb_strlen($nome) > 100 || mb_strlen($cognome) > 100 || strlen($email) > 254) {
                 ocms_flash_set('error', 'Nome, cognome o email troppo lunghi.');
-                ocms_redirect(ocms_base_url() . '/firma/' . $sheet['slug']);
+                ocms_redirect($backUrl);
             }
             if ($nome === '' || $cognome === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
                 ocms_flash_set('error', 'Compila nome, cognome e una email valida.');
-                ocms_redirect(ocms_base_url() . '/firma/' . $sheet['slug']);
+                ocms_redirect($backUrl);
             }
             // Anti-duplicato per email
             $firme = $sheet['firme'] ?? [];
@@ -1058,6 +1069,7 @@ HTML;
                 $d['updated_at'] = ocms_now();
                 return $d;
             });
+            unset($_SESSION['_firma_old'][$sheet['slug']]);
             if ($dupInside) {
                 ocms_redirect(ocms_base_url() . '/firma/' . $sheet['slug'] . '/fatto?dup=1');
             }
@@ -1117,7 +1129,8 @@ HTML;
                 || ($k !== '' && hash_equals(ocms_signed_token('firma-show:' . basename($params['slug'])), $k));
             echo json_encode([
                 'count' => count($firmeArr),
-                'status' => $sheet['status'] ?? 'open',
+                // chiusura automatica scaduta = chiuso (prima la proiezione tornava "aperta")
+                'status' => ocms_fogliofirme_is_expired($sheet) ? 'closed' : ($sheet['status'] ?? 'open'),
                 'last' => ($staff && $last) ? ['nome' => $last['nome'] ?? '', 'cognome' => $last['cognome'] ?? '', 'signed_at' => $last['signed_at'] ?? ''] : null,
             ]);
         });
@@ -1291,7 +1304,7 @@ HTML;
                 'id' => $existingPage['id'] ?? (($_POST['id'] ?? '') ?: ocms_uuid()),
                 'title' => trim((string)($_POST['title'] ?? '')),
                 'slug' => $slug,
-                'content' => ocms_sanitize_html($_POST['content'] ?? ''),
+                'content' => ocms_content_for_role($app, ocms_post_str('content')),
                 'template' => $_POST['template'] ?? 'page',
                 'layout' => $_POST['layout'] ?? 'none',
                 'status' => in_array($_POST['status'] ?? '', ['draft', 'published'], true) ? $_POST['status'] : 'draft',
@@ -1420,7 +1433,7 @@ HTML;
                 'title' => trim((string)($_POST['title'] ?? '')),
                 'slug' => $slug,
                 'excerpt' => trim($_POST['excerpt'] ?? ''),
-                'content' => ocms_sanitize_html($_POST['content'] ?? ''),
+                'content' => ocms_content_for_role($app, ocms_post_str('content')),
                 'cover_image' => trim($_POST['cover_image'] ?? ''),
                 'gallery' => ocms_clean_gallery(json_decode(ocms_post_str('gallery', '[]'), true)),
                 'category' => $_POST['category'] ?? '',
@@ -2961,23 +2974,28 @@ HTML;
                     if (($f['id'] ?? '') === $id) { $existing = $f; break; }
                 }
             }
-            $clash = $app->storage->find('forms', $slug);
             // Form vecchi con id vuoto: l'editor manda lo slug originale, che identifica
             // il form anche quando l'id manca
             $origSlug = basename((string)($input['original_slug'] ?? ''));
             if (!$existing && $origSlug !== '') {
                 $existing = $app->storage->find('forms', $origSlug);
             }
+            // Un form esistente tiene il suo slug anche se cambia il nome: lo shortcode
+            // [form:slug] negli articoli deve continuare a funzionare
+            if ($existing && !empty($existing['slug']) && ocms_is_safe_slug((string)$existing['slug'])) {
+                $slug = (string)$existing['slug'];
+            }
+            $clash = $app->storage->find('forms', $slug);
             if ($clash && ($clash['id'] ?? '') !== ($existing['id'] ?? ($id !== '' ? $id : '__nuovo__'))) {
                 echo json_encode(['error' => 'Esiste già un altro form con questo nome']); return;
             }
 
             $form = [
                 'id' => !empty($existing['id']) ? $existing['id'] : ($id !== '' ? $id : ocms_uuid()),
-                'name' => trim($input['name'] ?? ''),
+                'name' => trim(is_string($input['name'] ?? null) ? $input['name'] : ''),
                 'slug' => $slug,
-                'fields' => $input['fields'] ?? [],
-                'settings' => $input['settings'] ?? ['notify_email' => '', 'success_message' => 'Grazie! Il modulo è stato inviato.', 'submit_label' => 'Invia'],
+                'fields' => is_array($input['fields'] ?? null) ? array_values($input['fields']) : [],
+                'settings' => is_array($input['settings'] ?? null) ? $input['settings'] : ['notify_email' => '', 'success_message' => 'Grazie! Il modulo è stato inviato.', 'submit_label' => 'Invia'],
                 'created_at' => $existing['created_at'] ?? ($input['created_at'] ?? ocms_now()),
                 'updated_at' => ocms_now(),
             ];

@@ -121,7 +121,7 @@ document.addEventListener('DOMContentLoaded', function() {
                         <div class="form-group" style="margin-bottom:0;"><label>Placeholder</label><input type="text" class="form-input fc-placeholder" value="${esc(f.placeholder||'')}"></div>
                         <div class="form-group" style="margin-bottom:0;"><label style="display:flex;align-items:center;gap:6px;"><input type="checkbox" class="fc-required" ${f.required?'checked':''}> Obbligatorio</label></div>
                     </div>
-                    ${['select','radio','checkbox'].includes(f.type) ? `<div class="form-group" style="margin-bottom:0;"><label>Opzioni (una per riga)</label><textarea class="form-textarea fc-options" rows="3">${esc((f.options||[]).join('\\n'))}</textarea></div>` : ''}
+                    ${['select','radio','checkbox'].includes(f.type) ? `<div class="form-group" style="margin-bottom:0;"><label>Opzioni (una per riga)</label><textarea class="form-textarea fc-options" rows="3">${esc((f.options||[]).join('\n'))}</textarea></div>` : ''}
                 </div>`;
 
             div.querySelector('.btn-toggle').onclick = () => div.querySelector('.field-config').classList.toggle('open');
@@ -133,7 +133,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 f.placeholder = div.querySelector('.fc-placeholder')?.value || '';
                 f.required = div.querySelector('.fc-required')?.checked || false;
                 const opts = div.querySelector('.fc-options');
-                if (opts) f.options = opts.value.split('\\n').filter(Boolean);
+                if (opts) f.options = opts.value.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
                 div.querySelector('.field-name').textContent = f.label || f.name;
             };
             div.querySelectorAll('input,textarea').forEach(el => el.addEventListener('input', update));
@@ -174,7 +174,8 @@ document.addEventListener('DOMContentLoaded', function() {
         finally { btn.disabled = false; btn.textContent = 'Salva Form'; }
     });
 
-    function esc(s) { const d=document.createElement('div'); d.textContent=s||''; return d.innerHTML; }
+    // escape completo, virgolette comprese (i valori finiscono dentro value="...")
+    function esc(s) { return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
     renderFields();
 });
 </script>

@@ -74,8 +74,8 @@ $r = http('POST', "$base/admin/forms/save", ['cookiejar' => $jarS, 'headers' => 
 $f = json_decode(file_get_contents("$data/forms/t-form.json"), true);
 t('submissions conservate', count($f['submissions'] ?? []) === 1, $r['body']);
 $r = http('POST', "$base/admin/forms/save", ['cookiejar' => $jarS, 'headers' => ['Content-Type: application/json'], 'body' => json_encode(['_csrf_token' => $tokS, 'id' => 'form-id-1', 'name' => 'T form rinominato', 'fields' => [], 'settings' => []])]);
-$f2 = @json_decode(@file_get_contents("$data/forms/t-form-rinominato.json"), true);
-t('rinomina form: compilazioni spostate e vecchio file rimosso', count($f2['submissions'] ?? []) === 1 && !is_file("$data/forms/t-form.json"), $r['body']);
+$f2 = @json_decode(@file_get_contents("$data/forms/t-form.json"), true);
+t('rinomina form: lo slug resta (shortcode intatti), nome e compilazioni ok', ($f2['name'] ?? '') === 'T form rinominato' && count($f2['submissions'] ?? []) === 1 && !is_file("$data/forms/t-form-rinominato.json"), $r['body']);
 
 file_put_contents("$data/forms/t-legacy.json", json_encode(['id' => '', 'name' => 'T legacy', 'slug' => 't-legacy', 'fields' => [], 'settings' => [], 'submissions' => [['id' => 'a'], ['id' => 'b']]]));
 $r = http('POST', "$base/admin/forms/save", ['cookiejar' => $jarS, 'headers' => ['Content-Type: application/json'], 'body' => json_encode(['_csrf_token' => $tokS, 'id' => '', 'original_slug' => 't-legacy', 'name' => 'T legacy', 'fields' => [], 'settings' => []])]);

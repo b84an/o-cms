@@ -21,4 +21,8 @@ t('lezioni: sorgente .jsp reso innocuo', ocms_lesson_safe_name('Esempio.jsp') ==
 t('lezioni: .htaccess reso innocuo', ocms_lesson_safe_name('.htaccess') === '_htaccess');
 t('lezioni: index.php → index_php.txt', ocms_lesson_safe_name('index.php') === 'index_php.txt');
 t('lezioni: pdf invariato', ocms_lesson_safe_name('dispensa 1.pdf') === 'dispensa_1.pdf');
+t('codice FoglioFirme senza maiuscole/spazi', ocms_code_matches('COLLEGIO26', ' collegio26 ') && !ocms_code_matches('COLLEGIO26', 'collegio2') && !ocms_code_matches('', ''));
+t('slug sicuri', ocms_is_safe_slug('ok-1') && !ocms_is_safe_slug('..') && !ocms_is_safe_slug('a/b') && !ocms_is_safe_slug(''));
+t('tag normalizzati', ocms_clean_tags('uno, due,,uno') === ['uno', 'due'] && ocms_clean_tags(['x', ['y']]) === ['x']);
+t('galleria ripulita', ocms_clean_gallery(['k' => ['url' => '/a.jpg', 'evil' => 'x'], ['url' => 'javascript:alert(1)']]) === [['url' => '/a.jpg']]);
 done();

@@ -57,7 +57,8 @@ class LayoutRenderer {
      * Renderizza una sezione (header, main, footer, ecc.)
      */
     private function renderSection(array $section): string {
-        $tag = $section['tag'] ?? 'section';
+        // solo tag di sezione noti: il valore arriva dal JSON del layout
+        $tag = in_array($section['tag'] ?? '', ['section', 'header', 'footer', 'main', 'aside', 'div', 'nav', 'article'], true) ? $section['tag'] : 'section';
         $class = $section['class'] ?? '';
         $id = $section['id'] ?? '';
         $bgColor = $section['bgColor'] ?? '';
@@ -158,7 +159,7 @@ class LayoutRenderer {
     // ─── MODULI ───
 
     private function modHeading(array $s): string {
-        $tag = $s['tag'] ?? 'h2';
+        $tag = in_array($s['tag'] ?? '', ['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'p', 'div'], true) ? $s['tag'] : 'h2';
         $text = htmlspecialchars($s['text'] ?? '');
         $align = $s['align'] ?? 'left';
         $color = $s['color'] ?? '';

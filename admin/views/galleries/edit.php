@@ -393,10 +393,9 @@ document.addEventListener('DOMContentLoaded', function() {
         initDragReorder();
     }
 
-    function escape(str) {
-        const d = document.createElement('div');
-        d.textContent = str;
-        return d.innerHTML;
+    // escape completo, virgolette comprese (i valori finiscono dentro value="...")
+    function escape(s) {
+        return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
     }
 
     // ─── Set Cover ───

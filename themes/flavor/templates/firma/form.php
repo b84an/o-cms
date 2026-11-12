@@ -2,6 +2,7 @@
 require_once dirname(__DIR__) . '/_bootstrap.php';
 $needCode = !empty($needCode);
 $codeOk   = !empty($codeOk);
+$old      = is_array($old ?? null) ? $old : [];
 $action   = ocms_base_url() . '/firma/' . rawurlencode((string) $sheet['slug']);
 $flashes  = ocms_flash_get();
 $flavor = [
@@ -42,16 +43,16 @@ include dirname(__DIR__) . '/_header.php';
             <div class="form-row">
                 <div class="field">
                     <label for="nome">Nome</label>
-                    <input type="text" id="nome" name="nome" required maxlength="100" autocomplete="given-name">
+                    <input type="text" id="nome" name="nome" value="<?= ocms_escape($old['nome'] ?? '') ?>" required maxlength="100" autocomplete="given-name">
                 </div>
                 <div class="field">
                     <label for="cognome">Cognome</label>
-                    <input type="text" id="cognome" name="cognome" required maxlength="100" autocomplete="family-name">
+                    <input type="text" id="cognome" name="cognome" value="<?= ocms_escape($old['cognome'] ?? '') ?>" required maxlength="100" autocomplete="family-name">
                 </div>
             </div>
             <div class="field">
                 <label for="email">Email</label>
-                <input type="email" id="email" name="email" required maxlength="200" autocomplete="email" inputmode="email">
+                <input type="email" id="email" name="email" value="<?= ocms_escape($old['email'] ?? '') ?>" required maxlength="200" autocomplete="email" inputmode="email">
             </div>
             <div class="hp" aria-hidden="true">
                 <label>Sito web <input type="text" name="website" tabindex="-1" autocomplete="off"></label>

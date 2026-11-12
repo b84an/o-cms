@@ -335,10 +335,15 @@
     var saved = load();
     if (saved) {
         els.recovery.hidden = false;
+        // Sui PC del laboratorio lo stesso browser passa da uno studente all'altro:
+        // si dice di chi è il quiz salvato e si può sempre ricominciare da capo
+        var who = saved.student ? [saved.student.name, saved.student['class']].filter(Boolean).join(', classe ') : '';
+        var p = els.recovery.querySelector('p');
         if (saved.finished) {
-            els.recovery.querySelector('p').textContent = 'Hai un quiz già terminato ma non ancora consegnato su questo dispositivo. Consegnalo adesso.';
+            p.textContent = 'Su questo dispositivo c\'è un quiz terminato ma non consegnato' + (who ? ' di ' + who : '') + '. Se è il tuo, consegnalo adesso; altrimenti ricomincia da capo.';
             document.querySelector('[data-quiz-recover]').textContent = 'Consegna ora';
-            document.querySelector('[data-quiz-discard]').hidden = true;
+        } else if (who) {
+            p.textContent = 'Su questo dispositivo c\'è un quiz in corso di ' + who + '. Se è il tuo, riprendi da dove eri rimasto; altrimenti ricomincia da capo.';
         }
         document.querySelector('[data-quiz-recover]').addEventListener('click', function () {
             st = saved;

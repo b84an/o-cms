@@ -304,9 +304,9 @@ ob_start();
                     });
                     const data = await res.json();
                     if (data.success) {
-                        result.textContent = '&#10003; ' + data.message;
+                        // testo generato dal modello: mai come HTML
+                        result.textContent = '✓ ' + String(data.message || '');
                         result.style.color = 'var(--success, #22c55e)';
-                        result.innerHTML = '&#10003; ' + data.message;
                     } else {
                         result.textContent = data.error || 'Errore sconosciuto';
                         result.style.color = 'var(--danger, #ef4444)';
